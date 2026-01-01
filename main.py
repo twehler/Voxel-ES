@@ -11,6 +11,16 @@ from panda3d.core import (
     WindowProperties, ClockObject, Loader
 )
 
+from panda3d.core import loadPrcFileData
+
+# Force V-Sync to match your monitor's refresh rate
+loadPrcFileData("", "sync-video #t")
+
+# Optional: Cap the frame rate at 60 to see if it stabilizes
+loadPrcFileData("", "framebuffer-vertical-sync #t")
+loadPrcFileData("", "clock-mode limited")
+loadPrcFileData("", "clock-frame-rate 60")
+
 
 
 """ To Do:
@@ -50,15 +60,17 @@ logger_main.info("------------------------------------------------------")
 def degToRad(degrees):
     return degrees * (pi / 180.0)
 
+def hex_to_rgba(self, hex_str):        
+    hex_str = hex_str.lstrip('#')
+    r, g, b = tuple(int(hex_str[i:i+2], 16) / 255.0 for i in (0, 2, 4))
+    return LColor(r, g, b, 1.0)
+
 
 class Voxel:
-    def __init__(self, hex_color="#ffffff"):
-        self.color = self.hex_to_rgba(hex_color)
+    def __init__(self, hex_color="3dc53dff"):
+        self.color = hex_color
 
-    def hex_to_rgba(self, hex_str):        
-        hex_str = hex_str.lstrip('#')
-        r, g, b = tuple(int(hex_str[i:i+2], 16) / 255.0 for i in (0, 2, 4))
-        return LColor(r, g, b, 1.0)
+    
 
     def generate(self):
         format = GeomVertexFormat.getV3n3c4()
@@ -134,10 +146,10 @@ class VoxelWorld(ShowBase):
 
         # Creating voxels (x, y, z)
         logger_main.info("Generating stationary voxels...")
-        self.create_voxel(position=(0, 10, 0), color="#3498db")
-        self.create_voxel(position=(3, 10, 0), color="#3498db")
-        self.create_voxel(position=(1, 10, 0), color="#e74c3c")
-        self.create_voxel(position=(0, 11, 1), color="#2ecc71")     
+        
+        self.create_voxel_chunk(10, 10, "3dc53dff")
+        
+           
         
         self.taskMgr.add(self.update_camera, "update")
         logger_main.info("Done.")
@@ -170,7 +182,7 @@ class VoxelWorld(ShowBase):
         self.accept("space", self.update_key_map, ["up", True])
         self.accept("space-up", self.update_key_map, ["up", False])
         self.accept("lshift", self.update_key_map, ["down", True])
-        self.accept("lshift-up", self.update_key_map, ["up", False])
+        self.accept("lshift-up", self.update_key_map, ["down", False])
         
         
         
@@ -213,27 +225,45 @@ class VoxelWorld(ShowBase):
         skybox.setBin("background", 1)
         skybox.setDepthWrite(0)
         skybox.setLightOff()
-        skybox.reparentTo(self.render)
-
-    def create_voxel(self, position, color):
-        voxel_factory = Voxel(color)
-        voxel_geom = voxel_factory.generate()
-        
-        # generating node path & rendering
-        voxel_np = self.render.attachNewNode(voxel_geom)
-        voxel_np.setPos(position)
-        
-        
-        
+        skybox.reparentTo(self.render)      
         
         
     # function which updates the camera position, based on the movements of the mouse
+    
     def update_camera(self, task):
         dt = globalClock.getDt() # delta time        
         md = self.win.getPointer(0) # get mouse cursor position relative to the game window
         
-        playerMoveSpeed = 10
+        
+        if self.camera_swing_activated:
+            # Determine the center of the window
+            win_width = self.win.getProperties().getXSize()
+            win_height = self.win.getProperties().getYSize()
+            center_x = win_width // 2
+            center_y = win_height // 2
 
+            # Calculate how far the mouse is from the center
+            mouse_change_X = md.getX() - center_x
+            mouse_change_Y = md.getY() - center_y
+            
+            # Reset the mouse pointer to the center 
+            self.win.movePointer(0, center_x, center_y)
+            
+            # Apply rotation (Increase sensitivity factor as needed)
+            # In M_relative, we usually don't need 'dt' for mouse look 
+            # because the mouse hardware already provides a discrete delta.
+            self.cameraSwingFactor = 0.08 
+            
+            current_H = self.camera.getH()
+            current_P = self.camera.getP()
+            
+            new_H = current_H - mouse_change_X * self.cameraSwingFactor
+            new_P = current_P - mouse_change_Y * self.cameraSwingFactor
+            
+            self.camera.setHpr(new_H, min(90, max(-90, new_P)), 0)
+        
+        
+        playerMoveSpeed = 12
         x_movement = 0
         y_movement = 0
         z_movement = 0
@@ -259,31 +289,33 @@ class VoxelWorld(ShowBase):
             self.camera.getX() + x_movement,
             self.camera.getY() + y_movement,
             self.camera.getZ() + z_movement,
-        )
-        
-        if self.camera_swing_activated == True:
-            mouseX = md.getX()
-            mouseY = md.getY()
-            
-            mouse_change_X = mouseX - self.last_mouseX
-            mouse_change_Y = mouseY - self.last_mouseY
-            
-            current_H = self.camera.getH()
-            current_P = self.camera.getP()
-            
-            self.cameraSwingFactor = 8
-            
-            self.camera.setHpr(
-                    current_H - mouse_change_X * dt * self.cameraSwingFactor,
-                    min(90, max(-90, current_P - mouse_change_Y * dt * self.cameraSwingFactor)),
-                    0
-                )
-            
-            self.last_mouseX = mouseX
-            self.last_mouseY = mouseY
+        )        
             
         return task.cont
+    
+    
+    def create_voxel(self, position, color):
+        voxel_factory = Voxel(color)
+        voxel_geom = voxel_factory.generate()
         
+        # generating node path & rendering
+        voxel_np = self.render.attachNewNode(voxel_geom)
+        voxel_np.setPos(position)
+        
+        
+        
+        
+    def create_voxel_chunk(self, x_length, y_length, base_color):
+        
+        z = 0
+        
+        for x in range(x_length):
+            for y in range(y_length):
+                self.create_voxel(position=(x, y, z), color=base_color) 
+
+
+      
+ 
 
 app = VoxelWorld()
 app.run()
