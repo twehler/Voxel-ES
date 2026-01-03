@@ -65,21 +65,25 @@ def hex_to_rgba(hex_str):
 
 
 class Voxel:
+
     def __init__(self, rgb_color="3dc53dff"):
         self.color = hex_to_rgba(rgb_color)
+        self.position = None
+        self.material = None
 
     
     # generates a single Voxel with its own geometry node
     def generate_single(self):
-        format = GeomVertexFormat.getV3n3c4()
-        vdata = GeomVertexData('voxel', format, Geom.UHStatic)
 
+        # providing a stencil for geometry inside the GPU
+        geom_format = GeomVertexFormat.getV3n3c4()
+        vdata = GeomVertexData('voxel', geom_format, Geom.UHStatic)
         vertex = GeomVertexWriter(vdata, 'vertex')
         normal = GeomVertexWriter(vdata, 'normal')
         color = GeomVertexWriter(vdata, 'color')
         tris = GeomTriangles(Geom.UHStatic)
 
-        # inner function to add all 6 faces of the cube, each with 4 points
+        # inner function to add all 6 faces of the cube, each with 4 points on space and a normal 
         # the finished cube will have 24 overlapping vertices to ensure proper texture behaviour
         def add_face(p1, p2, p3, p4, norm):
             start = vdata.getNumRows()
@@ -112,21 +116,25 @@ class Voxel:
         return node
 
 
-    # creates a voxel which is able to be merged with other voxels into a single geometry node
+    # creates a voxel which is part of a larger mesh
+    # appends data to an existing list
     def generate_embedded(self, x, y, z, v_writer, n_writer, c_writer, tris, vdata):
+
         # Local helper to add a face to the shared writers
         def add_face(p1, p2, p3, p4, norm):
-            start = vdata.getNumRows()
+
+            start = vdata.getNumRows() # counts the already existing vertices
+
+            # generating vertices, normals and colors for a single voxel-face
             for p in [p1, p2, p3, p4]:
                 # Apply the (x, y, z) offset here
                 v_writer.addData3(p[0] + x, p[1] + y, p[2] + z)
                 n_writer.addData3(norm)
                 c_writer.addData4(self.color)
-
             tris.addVertices(start, start + 1, start + 2)
             tris.addVertices(start, start + 2, start + 3)
 
-        # Define cube faces
+        # generating all 6 faces of the voxel at their target-position
         add_face((0,0,0), (0,1,0), (1,1,0), (1,0,0), LVector3(0,0,-1)) # Bottom
         add_face((0,0,1), (1,0,1), (1,1,1), (0,1,1), LVector3(0,0,1))  # Top
         add_face((0,0,0), (1,0,0), (1,0,1), (0,0,1), LVector3(0,-1,0)) # Front
@@ -274,71 +282,64 @@ class VoxelWorld(ShowBase):
         
         
     # function which updates the camera position, based on the movements of the mouse
-    
+   
     def update_camera(self, task):
-        dt = globalClock.getDt() # delta time        
-        md = self.win.getPointer(0) # get mouse cursor position relative to the game window
-        
+        dt = globalClock.getDt()
         
         if self.camera_swing_activated:
-            # Determine the center of the window
-            win_width = self.win.getProperties().getXSize()
-            win_height = self.win.getProperties().getYSize()
-            center_x = win_width // 2
-            center_y = win_height // 2
 
-            # Calculate how far the mouse is from the center
+            md = self.win.getPointer(0) #Mouse-Data object
+            win_props = self.win.getProperties()
+            
+            center_x = win_props.getXSize() // 2
+            center_y = win_props.getYSize() // 2
             mouse_change_X = md.getX() - center_x
             mouse_change_Y = md.getY() - center_y
             
-            # Reset the mouse pointer to the center 
+            # Reset pointer to avoid double-reading the same delta
             self.win.movePointer(0, center_x, center_y)
+                
+            sensitivity = 8.0  # Mouse sensitivity 
             
-            # Apply rotation (Increase sensitivity factor as needed)
-            # In M_relative, we usually don't need 'dt' for mouse look 
-            # because the mouse hardware already provides a discrete delta.
-            self.cameraSwingFactor = 0.08 
-            
-            current_H = self.camera.getH()
-            current_P = self.camera.getP()
-            
-            new_H = current_H - mouse_change_X * self.cameraSwingFactor
-            new_P = current_P - mouse_change_Y * self.cameraSwingFactor
+            # H / Heading = Rotation around vertical axis
+            # P / Pitch = Tilting up and down
+            new_H = self.camera.getH() - (mouse_change_X * sensitivity * dt)
+            new_P = self.camera.getP() - (mouse_change_Y * sensitivity * dt)
             
             self.camera.setHpr(new_H, min(90, max(-90, new_P)), 0)
-        
-        
-        playerMoveSpeed = 12
-        x_movement = 0
-        y_movement = 0
-        z_movement = 0
 
-        if self.key_map['forward']:
-            x_movement -= dt * playerMoveSpeed * sin(degToRad(self.camera.getH()))
-            y_movement += dt * playerMoveSpeed * cos(degToRad(self.camera.getH()))
-        if self.key_map['backward']:
-            x_movement += dt * playerMoveSpeed * sin(degToRad(self.camera.getH()))
-            y_movement -= dt * playerMoveSpeed * cos(degToRad(self.camera.getH()))
-        if self.key_map['left']:
-            x_movement -= dt * playerMoveSpeed * cos(degToRad(self.camera.getH()))
-            y_movement -= dt * playerMoveSpeed * sin(degToRad(self.camera.getH()))
-        if self.key_map['right']:
-            x_movement += dt * playerMoveSpeed * cos(degToRad(self.camera.getH()))
-            y_movement += dt * playerMoveSpeed * sin(degToRad(self.camera.getH()))
-        if self.key_map['up']:
-            z_movement += dt * playerMoveSpeed
-        if self.key_map['down']:
-            z_movement -= dt * playerMoveSpeed
+            # Using a vector-based approach for movement
+            # LVector is a normal, linear vector object in 3D space
+            move_vec = LVector3(0, 0, 0) 
+            playerMoveSpeed = 10.0
 
-        self.camera.setPos(
-            self.camera.getX() + x_movement,
-            self.camera.getY() + y_movement,
-            self.camera.getZ() + z_movement,
-        )        
+
+            # in Panda3D, y goes forward/backward and x goes to the side from camera perspective
+            # z goes up and down
+
+            if self.key_map['forward']:  
+                move_vec.setY(1)
+            if self.key_map['backward']: 
+                move_vec.setY(-1)
+            if self.key_map['left']:     
+                move_vec.setX(-1)
+            if self.key_map['right']:    
+                move_vec.setX(1)
+            if self.key_map['up']:       
+                move_vec.setZ(1)
+            if self.key_map['down']:     
+                move_vec.setZ(-1)
+
+            move_vec.normalize() # Prevents moving faster diagonally
             
-        return task.cont
+            # Translate the movement relative to where the camera is looking
+            # setPos(reference_node, movement_vector), performs matrix multiplication in C++ backend
+            # setPos(x, y, z) would also be possible (method overloading feature from Panda3D)
+            self.camera.setPos(self.camera, move_vec * playerMoveSpeed * dt)
+
+        return task.cont  
+
     
-          
     def create_terrain(self):
         voxel_map = VoxelMap()
 
