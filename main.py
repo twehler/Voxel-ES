@@ -15,7 +15,6 @@ from panda3d.core import loadPrcFileData
 
 # Force V-Sync to match your monitor's refresh rate
 loadPrcFileData("", "sync-video #t")
-
 # Optional: Cap the frame rate at 60 to see if it stabilizes
 loadPrcFileData("", "framebuffer-vertical-sync #t")
 loadPrcFileData("", "clock-mode limited")
@@ -24,8 +23,7 @@ loadPrcFileData("", "clock-frame-rate 60")
 
 
 """ To Do:
-Fix bug: Camera Stuttering
-Join multiple cubes into a 3D-plane
+Join multiple cubes into a 3D-plane, generate in custom color
 Join triangles of multiple blocks into a single square with two triangles 
 
 
@@ -60,19 +58,19 @@ logger_main.info("------------------------------------------------------")
 def degToRad(degrees):
     return degrees * (pi / 180.0)
 
-def hex_to_rgba(self, hex_str):        
+def hex_to_rgba(hex_str):        
     hex_str = hex_str.lstrip('#')
     r, g, b = tuple(int(hex_str[i:i+2], 16) / 255.0 for i in (0, 2, 4))
     return LColor(r, g, b, 1.0)
 
 
 class Voxel:
-    def __init__(self, hex_color="3dc53dff"):
-        self.color = hex_color
+    def __init__(self, rgb_color="3dc53dff"):
+        self.color = hex_to_rgba(rgb_color)
 
     
-
-    def generate(self):
+    # generates a single Voxel with its own geometry node
+    def generate_single(self):
         format = GeomVertexFormat.getV3n3c4()
         vdata = GeomVertexData('voxel', format, Geom.UHStatic)
 
@@ -114,7 +112,56 @@ class Voxel:
         return node
 
 
+    # creates a voxel which is able to be merged with other voxels into a single geometry node
+    def generate_embedded(self, x, y, z, v_writer, n_writer, c_writer, tris, vdata):
+        # Local helper to add a face to the shared writers
+        def add_face(p1, p2, p3, p4, norm):
+            start = vdata.getNumRows()
+            for p in [p1, p2, p3, p4]:
+                # Apply the (x, y, z) offset here
+                v_writer.addData3(p[0] + x, p[1] + y, p[2] + z)
+                n_writer.addData3(norm)
+                c_writer.addData4(self.color)
 
+            tris.addVertices(start, start + 1, start + 2)
+            tris.addVertices(start, start + 2, start + 3)
+
+        # Define cube faces
+        add_face((0,0,0), (0,1,0), (1,1,0), (1,0,0), LVector3(0,0,-1)) # Bottom
+        add_face((0,0,1), (1,0,1), (1,1,1), (0,1,1), LVector3(0,0,1))  # Top
+        add_face((0,0,0), (1,0,0), (1,0,1), (0,0,1), LVector3(0,-1,0)) # Front
+        add_face((1,1,0), (0,1,0), (0,1,1), (1,1,1), LVector3(0,1,0))  # Back
+        add_face((0,1,0), (0,0,0), (0,0,1), (0,1,1), LVector3(-1,0,0)) # Left
+        add_face((1,0,0), (1,1,0), (1,1,1), (1,0,1), LVector3(1,0,0))  # Right
+
+
+class VoxelMap:
+    def __init__(self):
+        self.format = GeomVertexFormat.getV3n3c4()
+        self.vdata = GeomVertexData('map_data', self.format, Geom.UHStatic)
+
+        # Create the writers that will be shared by all voxels
+        self.vertex = GeomVertexWriter(self.vdata, 'vertex')
+        self.normal = GeomVertexWriter(self.vdata, 'normal')
+        self.color = GeomVertexWriter(self.vdata, 'color')
+        self.tris = GeomTriangles(Geom.UHStatic)
+
+    def generate_terrain(self, x_size, y_size, color_hex):
+        # Create one Voxel template to use for the floor
+        voxel_template = Voxel(color_hex)
+
+        for x in range(x_size):
+            for y in range(y_size):
+                # Voxel draws directly into VoxelMap's vertex data
+                voxel_template.generate_embedded(x, y, 0, self.vertex, self.normal,
+                                   self.color, self.tris, self.vdata)
+
+        # Finalize the geometry
+        geom = Geom(self.vdata)
+        geom.addPrimitive(self.tris)
+        node = GeomNode('voxel-floor-mesh')
+        node.addGeom(geom)
+        return node
 
 
 class VoxelWorld(ShowBase):
@@ -127,9 +174,8 @@ class VoxelWorld(ShowBase):
         self.capture_mouse()
         self.setup_controls()
         self.setup_camera()
-        self.setup_skybox("cbt-panda3d-minecraft-main/skybox/skybox.egg")
+        self.setup_skybox("Skybox/skybox.egg")
         logger_main.info("Done.")
-
         # Setting up Lighting
         logger_main.info("Setting up lighting...")
         
@@ -147,8 +193,7 @@ class VoxelWorld(ShowBase):
         # Creating voxels (x, y, z)
         logger_main.info("Generating stationary voxels...")
         
-        self.create_voxel_chunk(10, 10, "3dc53dff")
-        
+        self.create_terrain()       
            
         
         self.taskMgr.add(self.update_camera, "update")
@@ -293,29 +338,16 @@ class VoxelWorld(ShowBase):
             
         return task.cont
     
-    
-    def create_voxel(self, position, color):
-        voxel_factory = Voxel(color)
-        voxel_geom = voxel_factory.generate()
-        
-        # generating node path & rendering
-        voxel_np = self.render.attachNewNode(voxel_geom)
-        voxel_np.setPos(position)
-        
-        
-        
-        
-    def create_voxel_chunk(self, x_length, y_length, base_color):
-        
-        z = 0
-        
-        for x in range(x_length):
-            for y in range(y_length):
-                self.create_voxel(position=(x, y, z), color=base_color) 
+          
+    def create_terrain(self):
+        voxel_map = VoxelMap()
+
+        # generating voxels inside a mesh
+        terrain_node = voxel_map.generate_terrain(1000, 1000, "3dc53dff")
+        terrain_np = self.render.attachNewNode(terrain_node)
+        terrain_np.setPos(0,0,0)
 
 
-      
- 
 
 app = VoxelWorld()
 app.run()
