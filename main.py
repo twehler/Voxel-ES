@@ -22,9 +22,44 @@ loadPrcFileData("", "clock-frame-rate 60")
 
 
 
+""" DONE:
+
+Don't render faces between blocks
+
+"""
+
+
+
+
+
 """ To Do:
-Join multiple cubes into a 3D-plane, generate in custom color
-Join triangles of multiple blocks into a single square with two triangles 
+
+implement greedy meshing
+implement primitive landscape generation with noise
+
+
+implement basic entity class: 
+multi-dimensional numpy array, which stores data about: cell-index, cell type, position, rotation, linkage
+
+implement voxel-surface-movement 
+--> all blocks should only move by "sliding" on another block
+
+expand voxel-class: 
+there is a list of "mandatory neighbors", on which a voxel depends
+--> for example, all voxels depend on the controller cell
+if mandatory neighbors are not present, the cell dies
+
+implement voxel: "ControllerCell"
+implement voxel: "SliderCell"
+implement voxel: "PhotosyntheticCell"
+implement voxel: "GutCell"
+implement voxel: "FoodSuckerCell"
+
+implement method: remove_voxel
+implement method: add_voxel
+
+implement entity: "BasicTerrestrialHerbivore"
+implement entity: "UnicellularAlgae"
 
 
 """
@@ -41,7 +76,7 @@ print("Working Directory:", os.getcwd())
 # Function for global root logger setup
 def logging_setup():
     logging.basicConfig(
-        filename="voxel_evolution.log",
+        filename="main.log",
         level = logging.DEBUG,
         format='%(asctime)s - %(name)s - %(lineno)d - %(levelname)s - %(message)s'
         )
@@ -118,8 +153,9 @@ class Voxel:
 
     # creates a voxel which is part of a larger mesh
     # appends data to an existing list
-    def generate_embedded(self, x, y, z, v_writer, n_writer, c_writer, tris, vdata):
-
+    def generate_embedded(self, x, y, z, v_writer, n_writer, c_writer, tris, vdata, neighbor_map):
+        
+        # the neighbor-map should make it possible to render only the faces which are not between blocks
         # Local helper to add a face to the shared writers
         def add_face(p1, p2, p3, p4, norm):
 
@@ -134,16 +170,43 @@ class Voxel:
             tris.addVertices(start, start + 1, start + 2)
             tris.addVertices(start, start + 2, start + 3)
 
+
+
+
         # generating all 6 faces of the voxel at their target-position
-        add_face((0,0,0), (0,1,0), (1,1,0), (1,0,0), LVector3(0,0,-1)) # Bottom
-        add_face((0,0,1), (1,0,1), (1,1,1), (0,1,1), LVector3(0,0,1))  # Top
-        add_face((0,0,0), (1,0,0), (1,0,1), (0,0,1), LVector3(0,-1,0)) # Front
-        add_face((1,1,0), (0,1,0), (0,1,1), (1,1,1), LVector3(0,1,0))  # Back
-        add_face((0,1,0), (0,0,0), (0,0,1), (0,1,1), LVector3(-1,0,0)) # Left
-        add_face((1,0,0), (1,1,0), (1,1,1), (1,0,1), LVector3(1,0,0))  # Right
+        # but only if the faces are not between blocks
+
+        # Bottom (z - 1)
+        if (x, y, z - 1) not in neighbor_map:
+            add_face((0,0,0), (0,1,0), (1,1,0), (1,0,0), LVector3(0,0,-1)) 
+
+        # Top (z + 1)
+        if (x, y, z + 1) not in neighbor_map:
+            add_face((0,0,1), (1,0,1), (1,1,1), (0,1,1), LVector3(0,0,1))
+
+        # Front (y - 1)
+        if (x, y - 1, z) not in neighbor_map:
+            add_face((0,0,0), (1,0,0), (1,0,1), (0,0,1), LVector3(0,-1,0))
+
+        # Back (y + 1)
+        if (x, y + 1, z) not in neighbor_map:
+            add_face((1,1,0), (0,1,0), (0,1,1), (1,1,1), LVector3(0,1,0))
+        
+        # Left (x - 1)
+        if (x - 1, y, z) not in neighbor_map:
+            add_face((0,1,0), (0,0,0), (0,0,1), (0,1,1), LVector3(-1,0,0))
+
+        # Right (x + 1)
+        if (x + 1, y, z) not in neighbor_map:
+            add_face((1,0,0), (1,1,0), (1,1,1), (1,0,1), LVector3(1,0,0))
+
+        
 
 
-class VoxelMap:
+
+
+# This is the object which holds joint voxels (for example a landscape) in an efficient way
+class VoxelMesh:
     def __init__(self):
         self.format = GeomVertexFormat.getV3n3c4()
         self.vdata = GeomVertexData('map_data', self.format, Geom.UHStatic)
@@ -154,34 +217,63 @@ class VoxelMap:
         self.color = GeomVertexWriter(self.vdata, 'color')
         self.tris = GeomTriangles(Geom.UHStatic)
 
-    def generate_terrain(self, x_size, y_size, color_hex):
-        # Create one Voxel template to use for the floor
-        voxel_template = Voxel(color_hex)
+    def generate_terrain(self, x_size, y_size, z_size, color_hex):
+       
+        # We use a dictionary where keys are (x, y, z) and values are the Voxel objects
+        # This "neighbor-map" is used to not render faces that are between two voxels
+        neighbor_map = {}
+        
 
+        logger_main.debug("Generating Neighbor-Map.")
         for x in range(x_size):
             for y in range(y_size):
-                # Voxel draws directly into VoxelMap's vertex data
-                voxel_template.generate_embedded(x, y, 0, self.vertex, self.normal,
-                                   self.color, self.tris, self.vdata)
+                for z in range(z_size):
+                    # For a flat 1000x1000 floor, z is always 0
+                    pos = (x, y, z)
+                    neighbor_map[pos] = Voxel(color_hex)
+        logger_main.debug("Neighbor-map successfully generated.")
 
-        # Finalize the geometry
+        # Now we loop through the map we just created
+        
+        DEBUG_voxel_counter = 0
+        for pos, voxel_obj in neighbor_map.items():
+            vx, vy, vz = pos
+
+            # We pass 'neighbor_map' into the voxel so it can check its surroundings
+            voxel_obj.generate_embedded(
+                vx, vy, vz,
+                self.vertex, self.normal, self.color,
+                self.tris, self.vdata,
+                neighbor_map
+            )
+            DEBUG_voxel_counter += 1
+            logger_main.debug(f"Embedded voxel successfully generated: {DEBUG_voxel_counter}")
+
+    
+        # Create node 
+        self.tris.closePrimitive()
         geom = Geom(self.vdata)
         geom.addPrimitive(self.tris)
-        node = GeomNode('voxel-floor-mesh')
+        node = GeomNode('terrain_node')
         node.addGeom(geom)
+
+        
         return node
+
 
 
 class VoxelWorld(ShowBase):
     def __init__(self):
         super().__init__()   
+        self.setFrameRateMeter(True)
         
+
         # Setting up controls
         logger_main.info("Setting up controls...")
         
         self.capture_mouse()
         self.setup_controls()
-        self.setup_camera()
+        self.setup_camera(5, 5, 20)
         self.setup_skybox("Skybox/skybox.egg")
         logger_main.info("Done.")
         # Setting up Lighting
@@ -198,13 +290,14 @@ class VoxelWorld(ShowBase):
         self.render.setLight(alnp)
         logger_main.info("Done.")
 
-        # Creating voxels (x, y, z)
-        logger_main.info("Generating stationary voxels...")
+        # Creating landscape
+        logger_main.debug("Calling function: call_generate_terrain") 
+        self.call_generate_terrain(100, 100, 5)       
+        logger_main.info("------------- World Generation Complete -----------------")
         
-        self.create_terrain()       
-           
-        
-        self.taskMgr.add(self.update_camera, "update")
+        print(self.render.analyze())  
+ 
+        self.taskMgr.add(self.update_camera, "update_camera")
         logger_main.info("Done.")
         
         
@@ -267,10 +360,10 @@ class VoxelWorld(ShowBase):
         properties.setMouseMode(WindowProperties.M_absolute) #cursor will be held in the middle of the image
         self.win.requestProperties(properties)
         
-    def setup_camera(self):
+    def setup_camera(self, x, y, z):
         self.disableMouse()     # disables standart mouse navigation
-        self.camera.setPos(5, 5, 5)
-        #self.camera.lookAt(0, 5, 0)
+        self.camera.setPos(x, y, z)
+        self.camera.lookAt(0, 5, 0)
         
     def setup_skybox(self, skybox_model):
         skybox = self.loader.loadModel(skybox_model)
@@ -299,7 +392,7 @@ class VoxelWorld(ShowBase):
             # Reset pointer to avoid double-reading the same delta
             self.win.movePointer(0, center_x, center_y)
                 
-            sensitivity = 8.0  # Mouse sensitivity 
+            sensitivity = 5.0  # Mouse sensitivity 
             
             # H / Heading = Rotation around vertical axis
             # P / Pitch = Tilting up and down
@@ -340,15 +433,14 @@ class VoxelWorld(ShowBase):
         return task.cont  
 
     
-    def create_terrain(self):
-        voxel_map = VoxelMap()
+    def call_generate_terrain(self, x, y, z):
+        voxel_mesh = VoxelMesh()
 
         # generating voxels inside a mesh
-        terrain_node = voxel_map.generate_terrain(1000, 1000, "3dc53dff")
+        terrain_node = voxel_mesh.generate_terrain(x, y, z, "3dc53dff")
         terrain_np = self.render.attachNewNode(terrain_node)
         terrain_np.setPos(0,0,0)
 
-
-
+    
 app = VoxelWorld()
 app.run()
