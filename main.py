@@ -2,16 +2,17 @@ import logging
 import os
 from math import cos, sin, pi
 
+import numpy as np
 import panda3d
 from direct.showbase.ShowBase import ShowBase
 from panda3d.core import (
     GeomVertexFormat, GeomVertexData, Geom, 
     GeomVertexWriter, GeomTriangles, GeomNode, 
     LVector3, LColor, DirectionalLight, AmbientLight, 
-    WindowProperties, ClockObject, Loader
+    WindowProperties, ClockObject, Loader, loadPrcFileData
 )
 
-from panda3d.core import loadPrcFileData
+
 
 # Force V-Sync to match your monitor's refresh rate
 loadPrcFileData("", "sync-video #t")
@@ -217,8 +218,14 @@ class VoxelMesh:
         self.color = GeomVertexWriter(self.vdata, 'color')
         self.tris = GeomTriangles(Geom.UHStatic)
 
-    def generate_terrain(self, x_size, y_size, z_size, color_hex):
-       
+    def generate_terrain(self, x_size, y_size, max_height, color_hex):
+        
+        try:
+            h_data = np.load("Perlin/heightmap.npy")
+        except FileNotFoundError:
+            print("Run perlin.py first!")
+            return None
+
         # We use a dictionary where keys are (x, y, z) and values are the Voxel objects
         # This "neighbor-map" is used to not render faces that are between two voxels
         neighbor_map = {}
@@ -227,7 +234,12 @@ class VoxelMesh:
         logger_main.debug("Generating Neighbor-Map.")
         for x in range(x_size):
             for y in range(y_size):
-                for z in range(z_size):
+
+                # Mapping Perlin noise on top of the world to create more realistic terrain
+                height = int(h_data[x,y] * max_height) 
+
+
+                for z in range(height + 1):
                     # For a flat 1000x1000 floor, z is always 0
                     pos = (x, y, z)
                     neighbor_map[pos] = Voxel(color_hex)
@@ -292,7 +304,7 @@ class VoxelWorld(ShowBase):
 
         # Creating landscape
         logger_main.debug("Calling function: call_generate_terrain") 
-        self.call_generate_terrain(100, 100, 5)       
+        self.call_generate_terrain(300, 300, 30)       
         logger_main.info("------------- World Generation Complete -----------------")
         
         print(self.render.analyze())  
@@ -433,11 +445,11 @@ class VoxelWorld(ShowBase):
         return task.cont  
 
     
-    def call_generate_terrain(self, x, y, z):
+    def call_generate_terrain(self, x, y, max_height):
         voxel_mesh = VoxelMesh()
 
         # generating voxels inside a mesh
-        terrain_node = voxel_mesh.generate_terrain(x, y, z, "3dc53dff")
+        terrain_node = voxel_mesh.generate_terrain(x, y, max_height, "3dc53dff")
         terrain_np = self.render.attachNewNode(terrain_node)
         terrain_np.setPos(0,0,0)
 
