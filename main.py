@@ -9,17 +9,12 @@ from panda3d.core import (
     GeomVertexFormat, GeomVertexData, Geom, 
     GeomVertexWriter, GeomTriangles, GeomNode, 
     LVector3, LColor, DirectionalLight, AmbientLight, 
-    WindowProperties, ClockObject, Loader, loadPrcFileData
+    WindowProperties, ClockObject, Loader, loadPrcFileData,
+    SamplerState, Texture
 )
 
 
 
-# Force V-Sync to match your monitor's refresh rate
-loadPrcFileData("", "sync-video #t")
-# Optional: Cap the frame rate at 60 to see if it stabilizes
-loadPrcFileData("", "framebuffer-vertical-sync #t")
-loadPrcFileData("", "clock-mode limited")
-loadPrcFileData("", "clock-frame-rate 60")
 
 
 
@@ -35,9 +30,7 @@ Don't render faces between blocks
 
 """ To Do:
 
-implement greedy meshing
-implement primitive landscape generation with noise
-
+implement textures
 
 implement basic entity class: 
 multi-dimensional numpy array, which stores data about: cell-index, cell type, position, rotation, linkage
@@ -46,9 +39,9 @@ implement voxel-surface-movement
 --> all blocks should only move by "sliding" on another block
 
 expand voxel-class: 
-there is a list of "mandatory neighbors", on which a voxel depends
+there is a list of "mandatory voxels", on which a voxel depends
 --> for example, all voxels depend on the controller cell
-if mandatory neighbors are not present, the cell dies
+if mandatory voxels are not present, the cell dies
 
 implement voxel: "ControllerCell"
 implement voxel: "SliderCell"
@@ -102,21 +95,19 @@ def hex_to_rgba(hex_str):
 
 class Voxel:
 
-    def __init__(self, rgb_color="3dc53dff"):
-        self.color = hex_to_rgba(rgb_color)
-        self.position = None
-        self.material = None
+    def __init__(self, texture_coords = (4, 0)):
+    
+        self.texture_coords = texture_coords
 
     
     # generates a single Voxel with its own geometry node
     def generate_single(self):
 
         # providing a stencil for geometry inside the GPU
-        geom_format = GeomVertexFormat.getV3n3c4()
+        geom_format = GeomVertexFormat.getV3n3t4()
         vdata = GeomVertexData('voxel', geom_format, Geom.UHStatic)
         vertex = GeomVertexWriter(vdata, 'vertex')
-        normal = GeomVertexWriter(vdata, 'normal')
-        color = GeomVertexWriter(vdata, 'color')
+        normal = GeomVertexWriter(vdata, 'normal')      
         tris = GeomTriangles(Geom.UHStatic)
 
         # inner function to add all 6 faces of the cube, each with 4 points on space and a normal 
@@ -125,8 +116,7 @@ class Voxel:
             start = vdata.getNumRows()
             for p in [p1, p2, p3, p4]:
                 vertex.addData3(p)
-                normal.addData3(norm)
-                color.addData4(self.color)
+                normal.addData3(norm)     
 
             tris.addVertices(start, start + 1, start + 2)
             tris.addVertices(start, start + 2, start + 3)
@@ -154,51 +144,82 @@ class Voxel:
 
     # creates a voxel which is part of a larger mesh
     # appends data to an existing list
-    def generate_embedded(self, x, y, z, v_writer, n_writer, c_writer, tris, vdata, neighbor_map):
-        
-        # the neighbor-map should make it possible to render only the faces which are not between blocks
+    def generate_embedded(self, x, y, z, v_writer, n_writer, t_writer, tris, vdata, voxel_map):
+           
+        atlas_res = 90.0       # Total width of your PNG
+        tile_full_res = 18.0   # 90 / 5 tiles = 18 pixels per tile slot
+        inner_res = 16.0       # The actual texture content (18 - 2 pixels for padding)
+        padding = 1          # 1 pixel border on all sides
+        extra_padding = 0.6
+
+        # Calculate pixel start for the specific tile
+        pixel_u = self.texture_coords[0] * tile_full_res
+        pixel_v = self.texture_coords[1] * tile_full_res
+
+        # Inset by padding and add half-texel offset (0.5) to hit the pixel center
+        u_start = (pixel_u + padding + extra_padding + 0.5) / atlas_res
+        v_start = (pixel_v + padding + extra_padding) / atlas_res
+        u_end = (pixel_u + padding + inner_res - extra_padding + 0.5) / atlas_res
+        v_end = (pixel_v + padding + inner_res - extra_padding) / atlas_res
+
+        # Panda3D standart corner mapping
+        uvs = [
+            (u_start, v_start),
+            (u_start, v_end),
+            (u_end, v_end),
+            (u_end, v_start)
+            ]
+
+        if x == 0 and y == 0 and z == 0:  # Only print for first voxel
+            print(f"Texture coords: {self.texture_coords}")
+            print(f"UV range: u={u_start:.6f} to {u_end:.6f}")
+            print(f"UV range: v={v_start:.6f} to {v_end:.6f}")
+            print(f"UV coverage: {(u_end - u_start) * atlas_res:.2f} pixels wide")
+
+
+        # the voxel-map should make it possible to render only the faces which are not between blocks
         # Local helper to add a face to the shared writers
         def add_face(p1, p2, p3, p4, norm):
-
+            
+                 
             start = vdata.getNumRows() # counts the already existing vertices
 
             # generating vertices, normals and colors for a single voxel-face
-            for p in [p1, p2, p3, p4]:
+            for i, p in enumerate([p1, p2, p3, p4]):
                 # Apply the (x, y, z) offset here
                 v_writer.addData3(p[0] + x, p[1] + y, p[2] + z)
                 n_writer.addData3(norm)
-                c_writer.addData4(self.color)
+                t_writer.addData2(uvs[i][0], uvs[i][1])
+
             tris.addVertices(start, start + 1, start + 2)
             tris.addVertices(start, start + 2, start + 3)
-
-
 
 
         # generating all 6 faces of the voxel at their target-position
         # but only if the faces are not between blocks
 
-        # Bottom (z - 1)
-        if (x, y, z - 1) not in neighbor_map:
-            add_face((0,0,0), (0,1,0), (1,1,0), (1,0,0), LVector3(0,0,-1)) 
+        # Bottom (check for z - 1)
+        if (x, y, z - 1) not in voxel_map:
+            add_face((0,0,0), (0,1,0), (1,1,0), (1,0,0), LVector3(0,0,-1))
 
-        # Top (z + 1)
-        if (x, y, z + 1) not in neighbor_map:
+        # Top (check for z + 1)
+        if (x, y, z + 1) not in voxel_map:
             add_face((0,0,1), (1,0,1), (1,1,1), (0,1,1), LVector3(0,0,1))
 
-        # Front (y - 1)
-        if (x, y - 1, z) not in neighbor_map:
+        # Front (check for y - 1)
+        if (x, y - 1, z) not in voxel_map:
             add_face((0,0,0), (1,0,0), (1,0,1), (0,0,1), LVector3(0,-1,0))
 
-        # Back (y + 1)
-        if (x, y + 1, z) not in neighbor_map:
+        # Back (check for y + 1)
+        if (x, y + 1, z) not in voxel_map:
             add_face((1,1,0), (0,1,0), (0,1,1), (1,1,1), LVector3(0,1,0))
         
-        # Left (x - 1)
-        if (x - 1, y, z) not in neighbor_map:
+        # Left (check for x - 1)
+        if (x - 1, y, z) not in voxel_map:
             add_face((0,1,0), (0,0,0), (0,0,1), (0,1,1), LVector3(-1,0,0))
 
-        # Right (x + 1)
-        if (x + 1, y, z) not in neighbor_map:
+        # Right (check for x + 1)
+        if (x + 1, y, z) not in voxel_map:
             add_face((1,0,0), (1,1,0), (1,1,1), (1,0,1), LVector3(1,0,0))
 
         
@@ -208,69 +229,101 @@ class Voxel:
 
 # This is the object which holds joint voxels (for example a landscape) in an efficient way
 class VoxelMesh:
-    def __init__(self):
-        self.format = GeomVertexFormat.getV3n3c4()
+    def __init__(self, base_voxel_object):
+        self.base_voxel_object = base_voxel_object 
+
+        self.format = GeomVertexFormat.getV3n3t2()
         self.vdata = GeomVertexData('map_data', self.format, Geom.UHStatic)
 
         # Create the writers that will be shared by all voxels
         self.vertex = GeomVertexWriter(self.vdata, 'vertex')
-        self.normal = GeomVertexWriter(self.vdata, 'normal')
-        self.color = GeomVertexWriter(self.vdata, 'color')
+        self.normal = GeomVertexWriter(self.vdata, 'normal') 
         self.tris = GeomTriangles(Geom.UHStatic)
+        self.texcoord = GeomVertexWriter(self.vdata, 'texcoord')
 
-    def generate_terrain(self, x_size, y_size, max_height, color_hex):
-        
+    def generate_base_terrain(self, x_size, y_size, max_height):
+        # Loading Perlin noise
         try:
             h_data = np.load("Perlin/heightmap.npy")
         except FileNotFoundError:
             print("Run perlin.py first!")
             return None
 
-        # We use a dictionary where keys are (x, y, z) and values are the Voxel objects
-        # This "neighbor-map" is used to not render faces that are between two voxels
-        neighbor_map = {}
-        
+        # We use a dictionary where every key is a tuple (x, y, z) and values are the Voxel objects
+        # This "voxel-map" is used to not render faces that are between two voxels
+        voxel_map = {}
 
-        logger_main.debug("Generating Neighbor-Map.")
+        logger_main.debug("Generating Voxel-Map.")
         for x in range(x_size):
             for y in range(y_size):
 
                 # Mapping Perlin noise on top of the world to create more realistic terrain
                 height = int(h_data[x,y] * max_height) 
 
-
                 for z in range(height + 1):
                     # For a flat 1000x1000 floor, z is always 0
                     pos = (x, y, z)
-                    neighbor_map[pos] = Voxel(color_hex)
-        logger_main.debug("Neighbor-map successfully generated.")
+                    voxel_map[pos] = self.base_voxel_object 
 
-        # Now we loop through the map we just created
+        # Creating test-form floating in sky
+        pos1 = (50, 50, 50)
+        pos2 = (51, 50, 50)
+        pos3 = (52, 50, 50)
+        pos4 = (52, 50, 51)
+        pos5 = (52, 50, 52)
+        voxel_map[pos1] = self.base_voxel_object
+        voxel_map[pos2] = self.base_voxel_object
+        voxel_map[pos3] = self.base_voxel_object
+        voxel_map[pos4] = self.base_voxel_object
+        voxel_map[pos5] = self.base_voxel_object
+ 
+        # Drilling a deep hole underneath floating form
+        for drillpos in range(30):
+            position_to_remove  = (50, 50, drillpos)
+            if position_to_remove in voxel_map: 
+                del voxel_map[position_to_remove]
+            else:
+                continue
         
-        DEBUG_voxel_counter = 0
-        for pos, voxel_obj in neighbor_map.items():
+        logger_main.debug("Voxel-map successfully generated.")
+
+        for pos, voxel_obj in voxel_map.items():
             vx, vy, vz = pos
 
-            # We pass 'neighbor_map' into the voxel so it can check its surroundings
+            # generating the voxel geometry
+            # generate_embedded only generates faces if they are not between voxels
             voxel_obj.generate_embedded(
                 vx, vy, vz,
-                self.vertex, self.normal, self.color,
+                self.vertex, self.normal, self.texcoord,
                 self.tris, self.vdata,
-                neighbor_map
-            )
-            DEBUG_voxel_counter += 1
-            logger_main.debug(f"Embedded voxel successfully generated: {DEBUG_voxel_counter}")
-
-    
+                voxel_map
+            )                
         # Create node 
         self.tris.closePrimitive()
         geom = Geom(self.vdata)
         geom.addPrimitive(self.tris)
         node = GeomNode('terrain_node')
         node.addGeom(geom)
-
-        
         return node
+
+
+
+###### Creating Voxel types #####
+
+stone_texture = (0, 4)
+grass1_texture = (1, 4)
+grass2_texture = (2, 4)
+grass3_texture = (3, 4)
+grass4_texture = (4, 4)
+
+voxel_stone = Voxel(stone_texture)
+voxel_grass1 = Voxel(grass1_texture)
+voxel_grass2 = Voxel(grass2_texture)
+voxel_grass3 = Voxel(grass3_texture)
+voxel_grass4 = Voxel(grass4_texture)
+
+#################################
+
 
 
 
@@ -279,18 +332,16 @@ class VoxelWorld(ShowBase):
         super().__init__()   
         self.setFrameRateMeter(True)
         
-
         # Setting up controls
         logger_main.info("Setting up controls...")
-        
         self.capture_mouse()
         self.setup_controls()
-        self.setup_camera(5, 5, 20)
+        self.setup_camera(5, 5, 30)
         self.setup_skybox("Skybox/skybox.egg")
         logger_main.info("Done.")
+
         # Setting up Lighting
         logger_main.info("Setting up lighting...")
-        
         dlight = DirectionalLight('dlight')
         dlight.setColor((1, 1, 1, 1))
         dlnp = self.render.attachNewNode(dlight)
@@ -302,9 +353,23 @@ class VoxelWorld(ShowBase):
         self.render.setLight(alnp)
         logger_main.info("Done.")
 
-        # Creating landscape
-        logger_main.debug("Calling function: call_generate_terrain") 
-        self.call_generate_terrain(300, 300, 30)       
+        # Importing and setting up texture atlas
+        logger_main.info("Setting up texture-atlas")
+        base.texture_atlas = self.loader.loadTexture("Textures/texture_atlas.png")
+        # Ensuring that textures don't look blurry
+        base.texture_atlas.setAnisotropicDegree(0)
+        base.texture_atlas.setWrapU(SamplerState.WM_clamp)
+        base.texture_atlas.setWrapV(SamplerState.WM_clamp)
+        base.texture_atlas.setMagfilter(SamplerState.FT_nearest)
+        base.texture_atlas.setMinfilter(SamplerState.FT_nearest)
+        base.texture_atlas.setMinfilter(Texture.FT_nearest)
+        base.texture_atlas.setMagfilter(Texture.FT_nearest)
+
+        # Generating world
+        logger_main.debug("------------- Beginning World Generation ----------------")
+
+        self.generate_world(300, 300, 10, voxel_grass2)       
+        
         logger_main.info("------------- World Generation Complete -----------------")
         
         print(self.render.analyze())  
@@ -312,8 +377,18 @@ class VoxelWorld(ShowBase):
         self.taskMgr.add(self.update_camera, "update_camera")
         logger_main.info("Done.")
         
-        
-        
+       
+    
+    def generate_world(self, x, y, max_height, voxel_object):
+        voxel_mesh = VoxelMesh(voxel_object)
+
+        # generating voxels inside a mesh
+        terrain_node = voxel_mesh.generate_base_terrain(x, y, max_height) 
+        terrain_np = self.render.attachNewNode(terrain_node)
+        terrain_np.setPos(0,0,0)
+        terrain_np.setTexture(base.texture_atlas)
+
+            
     def setup_controls(self):
         
         self.key_map = {
@@ -416,7 +491,7 @@ class VoxelWorld(ShowBase):
             # Using a vector-based approach for movement
             # LVector is a normal, linear vector object in 3D space
             move_vec = LVector3(0, 0, 0) 
-            playerMoveSpeed = 10.0
+            playerMoveSpeed = 15.0
 
 
             # in Panda3D, y goes forward/backward and x goes to the side from camera perspective
@@ -444,15 +519,6 @@ class VoxelWorld(ShowBase):
 
         return task.cont  
 
-    
-    def call_generate_terrain(self, x, y, max_height):
-        voxel_mesh = VoxelMesh()
 
-        # generating voxels inside a mesh
-        terrain_node = voxel_mesh.generate_terrain(x, y, max_height, "3dc53dff")
-        terrain_np = self.render.attachNewNode(terrain_node)
-        terrain_np.setPos(0,0,0)
-
-    
 app = VoxelWorld()
 app.run()
