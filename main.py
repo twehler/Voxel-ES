@@ -13,18 +13,9 @@ from panda3d.core import (
     SamplerState, Texture
 )
 
-
-
-
-
-
-""" DONE:
-
-Don't render faces between blocks
-
-"""
-
-
+from common import *
+from geometry import *
+from cell import *
 
 
 
@@ -93,221 +84,6 @@ def hex_to_rgba(hex_str):
     return LColor(r, g, b, 1.0)
 
 
-class Voxel:
-
-    def __init__(self, texture_coords = (4, 0)):
-    
-        self.texture_coords = texture_coords
-
-    
-    # generates a single Voxel with its own geometry node
-    def generate_single(self):
-
-        # providing a stencil for geometry inside the GPU
-        geom_format = GeomVertexFormat.getV3n3t4()
-        vdata = GeomVertexData('voxel', geom_format, Geom.UHStatic)
-        vertex = GeomVertexWriter(vdata, 'vertex')
-        normal = GeomVertexWriter(vdata, 'normal')      
-        tris = GeomTriangles(Geom.UHStatic)
-
-        # inner function to add all 6 faces of the cube, each with 4 points on space and a normal 
-        # the finished cube will have 24 overlapping vertices to ensure proper texture behaviour
-        def add_face(p1, p2, p3, p4, norm):
-            start = vdata.getNumRows()
-            for p in [p1, p2, p3, p4]:
-                vertex.addData3(p)
-                normal.addData3(norm)     
-
-            tris.addVertices(start, start + 1, start + 2)
-            tris.addVertices(start, start + 2, start + 3)
-
-        # Define cube faces
-        # Bottom (Z=0) - Looking from below
-        add_face((0,0,0), (0,1,0), (1,1,0), (1,0,0), LVector3(0,0,-1))
-        # Top (Z=1) - Looking from above
-        add_face((0,0,1), (1,0,1), (1,1,1), (0,1,1), LVector3(0,0,1))
-        # Front (Y=0) - Looking from -Y
-        add_face((0,0,0), (1,0,0), (1,0,1), (0,0,1), LVector3(0,-1,0))
-        # Back (Y=1) - Looking from +Y
-        add_face((1,1,0), (0,1,0), (0,1,1), (1,1,1), LVector3(0,1,0))
-        # Left (X=0) - Looking from -X
-        add_face((0,1,0), (0,0,0), (0,0,1), (0,1,1), LVector3(-1,0,0))
-        # Right (X=1) - Looking from +X
-        add_face((1,0,0), (1,1,0), (1,1,1), (1,0,1), LVector3(1,0,0))          
-
-        geom = Geom(vdata)
-        geom.addPrimitive(tris)
-        node = GeomNode('voxel-node')
-        node.addGeom(geom)
-        return node
-
-
-    # creates a voxel which is part of a larger mesh
-    # appends data to an existing list
-    def generate_embedded(self, x, y, z, v_writer, n_writer, t_writer, tris, vdata, voxel_map):
-           
-        atlas_res = 90.0       # Total width of your PNG
-        tile_full_res = 18.0   # 90 / 5 tiles = 18 pixels per tile slot
-        inner_res = 16.0       # The actual texture content (18 - 2 pixels for padding)
-        padding = 1          # 1 pixel border on all sides
-        extra_padding = 0.6
-
-        # Calculate pixel start for the specific tile
-        pixel_u = self.texture_coords[0] * tile_full_res
-        pixel_v = self.texture_coords[1] * tile_full_res
-
-        # Inset by padding and add half-texel offset (0.5) to hit the pixel center
-        u_start = (pixel_u + padding + extra_padding + 0.5) / atlas_res
-        v_start = (pixel_v + padding + extra_padding) / atlas_res
-        u_end = (pixel_u + padding + inner_res - extra_padding + 0.5) / atlas_res
-        v_end = (pixel_v + padding + inner_res - extra_padding) / atlas_res
-
-        # Panda3D standart corner mapping
-        uvs = [
-            (u_start, v_start),
-            (u_start, v_end),
-            (u_end, v_end),
-            (u_end, v_start)
-            ]
-
-        if x == 0 and y == 0 and z == 0:  # Only print for first voxel
-            print(f"Texture coords: {self.texture_coords}")
-            print(f"UV range: u={u_start:.6f} to {u_end:.6f}")
-            print(f"UV range: v={v_start:.6f} to {v_end:.6f}")
-            print(f"UV coverage: {(u_end - u_start) * atlas_res:.2f} pixels wide")
-
-
-        # the voxel-map should make it possible to render only the faces which are not between blocks
-        # Local helper to add a face to the shared writers
-        def add_face(p1, p2, p3, p4, norm):
-            
-                 
-            start = vdata.getNumRows() # counts the already existing vertices
-
-            # generating vertices, normals and colors for a single voxel-face
-            for i, p in enumerate([p1, p2, p3, p4]):
-                # Apply the (x, y, z) offset here
-                v_writer.addData3(p[0] + x, p[1] + y, p[2] + z)
-                n_writer.addData3(norm)
-                t_writer.addData2(uvs[i][0], uvs[i][1])
-
-            tris.addVertices(start, start + 1, start + 2)
-            tris.addVertices(start, start + 2, start + 3)
-
-
-        # generating all 6 faces of the voxel at their target-position
-        # but only if the faces are not between blocks
-
-        # Bottom (check for z - 1)
-        if (x, y, z - 1) not in voxel_map:
-            add_face((0,0,0), (0,1,0), (1,1,0), (1,0,0), LVector3(0,0,-1))
-
-        # Top (check for z + 1)
-        if (x, y, z + 1) not in voxel_map:
-            add_face((0,0,1), (1,0,1), (1,1,1), (0,1,1), LVector3(0,0,1))
-
-        # Front (check for y - 1)
-        if (x, y - 1, z) not in voxel_map:
-            add_face((0,0,0), (1,0,0), (1,0,1), (0,0,1), LVector3(0,-1,0))
-
-        # Back (check for y + 1)
-        if (x, y + 1, z) not in voxel_map:
-            add_face((1,1,0), (0,1,0), (0,1,1), (1,1,1), LVector3(0,1,0))
-        
-        # Left (check for x - 1)
-        if (x - 1, y, z) not in voxel_map:
-            add_face((0,1,0), (0,0,0), (0,0,1), (0,1,1), LVector3(-1,0,0))
-
-        # Right (check for x + 1)
-        if (x + 1, y, z) not in voxel_map:
-            add_face((1,0,0), (1,1,0), (1,1,1), (1,0,1), LVector3(1,0,0))
-
-        
-
-
-
-
-# This is the object which holds joint voxels (for example a landscape) in an efficient way
-class VoxelMesh:
-    def __init__(self, base_voxel_object):
-        self.base_voxel_object = base_voxel_object 
-
-        self.format = GeomVertexFormat.getV3n3t2()
-        self.vdata = GeomVertexData('map_data', self.format, Geom.UHStatic)
-
-        # Create the writers that will be shared by all voxels
-        self.vertex = GeomVertexWriter(self.vdata, 'vertex')
-        self.normal = GeomVertexWriter(self.vdata, 'normal') 
-        self.tris = GeomTriangles(Geom.UHStatic)
-        self.texcoord = GeomVertexWriter(self.vdata, 'texcoord')
-
-    def generate_base_terrain(self, x_size, y_size, max_height):
-        # Loading Perlin noise
-        try:
-            h_data = np.load("Perlin/heightmap.npy")
-        except FileNotFoundError:
-            print("Run perlin.py first!")
-            return None
-
-        # We use a dictionary where every key is a tuple (x, y, z) and values are the Voxel objects
-        # This "voxel-map" is used to not render faces that are between two voxels
-        voxel_map = {}
-
-        logger_main.debug("Generating Voxel-Map.")
-        for x in range(x_size):
-            for y in range(y_size):
-
-                # Mapping Perlin noise on top of the world to create more realistic terrain
-                height = int(h_data[x,y] * max_height) 
-
-                for z in range(height + 1):
-                    # For a flat 1000x1000 floor, z is always 0
-                    pos = (x, y, z)
-                    voxel_map[pos] = self.base_voxel_object 
-
-        # Creating test-form floating in sky
-        pos1 = (50, 50, 50)
-        pos2 = (51, 50, 50)
-        pos3 = (52, 50, 50)
-        pos4 = (52, 50, 51)
-        pos5 = (52, 50, 52)
-        voxel_map[pos1] = self.base_voxel_object
-        voxel_map[pos2] = self.base_voxel_object
-        voxel_map[pos3] = self.base_voxel_object
-        voxel_map[pos4] = self.base_voxel_object
-        voxel_map[pos5] = self.base_voxel_object
- 
-        # Drilling a deep hole underneath floating form
-        for drillpos in range(30):
-            position_to_remove  = (50, 50, drillpos)
-            if position_to_remove in voxel_map: 
-                del voxel_map[position_to_remove]
-            else:
-                continue
-        
-        logger_main.debug("Voxel-map successfully generated.")
-
-        for pos, voxel_obj in voxel_map.items():
-            vx, vy, vz = pos
-
-            # generating the voxel geometry
-            # generate_embedded only generates faces if they are not between voxels
-            voxel_obj.generate_embedded(
-                vx, vy, vz,
-                self.vertex, self.normal, self.texcoord,
-                self.tris, self.vdata,
-                voxel_map
-            )                
-        # Create node 
-        self.tris.closePrimitive()
-        geom = Geom(self.vdata)
-        geom.addPrimitive(self.tris)
-        node = GeomNode('terrain_node')
-        node.addGeom(geom)
-        return node
-
-
-
 ###### Creating Voxel types #####
 
 stone_texture = (0, 4)
@@ -337,6 +113,7 @@ class VoxelWorld(ShowBase):
         self.capture_mouse()
         self.setup_controls()
         self.setup_camera(5, 5, 30)
+        self.camera_move_speed = 15
         self.setup_skybox("Skybox/skybox.egg")
         logger_main.info("Done.")
 
@@ -358,17 +135,16 @@ class VoxelWorld(ShowBase):
         base.texture_atlas = self.loader.loadTexture("Textures/texture_atlas.png")
         # Ensuring that textures don't look blurry
         base.texture_atlas.setAnisotropicDegree(0)
-        base.texture_atlas.setWrapU(SamplerState.WM_clamp)
-        base.texture_atlas.setWrapV(SamplerState.WM_clamp)
-        base.texture_atlas.setMagfilter(SamplerState.FT_nearest)
-        base.texture_atlas.setMinfilter(SamplerState.FT_nearest)
         base.texture_atlas.setMinfilter(Texture.FT_nearest)
         base.texture_atlas.setMagfilter(Texture.FT_nearest)
+        
+        base.texture_atlas.setWrapU(Texture.WM_clamp)
+        base.texture_atlas.setWrapV(Texture.WM_clamp)
 
         # Generating world
         logger_main.debug("------------- Beginning World Generation ----------------")
 
-        self.generate_world(300, 300, 10, voxel_grass2)       
+        self.generate_world(300, 300, 20, voxel_grass3)       
         
         logger_main.info("------------- World Generation Complete -----------------")
         
@@ -376,9 +152,23 @@ class VoxelWorld(ShowBase):
  
         self.taskMgr.add(self.update_camera, "update_camera")
         logger_main.info("Done.")
-        
-       
-    
+
+
+        print("---------------- Generating Entities -----------------")
+
+        # Create a bright red cell at (10, 0, 5) tilted 45 degrees
+        cell1 = Cell(
+            pos=LVector3(10, 0, 50),
+            hpr=LVector3(45, 0, 0),
+            hex_color="#FF0000"
+        )
+
+        # You can still move it later
+        cell1.node_path.setZ(cell1.node_path.getZ() + 1)
+           
+
+
+
     def generate_world(self, x, y, max_height, voxel_object):
         voxel_mesh = VoxelMesh(voxel_object)
 
@@ -416,16 +206,20 @@ class VoxelWorld(ShowBase):
         self.accept("space-up", self.update_key_map, ["up", False])
         self.accept("lshift", self.update_key_map, ["down", True])
         self.accept("lshift-up", self.update_key_map, ["down", False])
+
+        self.accept("wheel_up", self.increase_camera_speed)    
+        self.accept("wheel_down", self.decrease_camera_speed) 
         
-        
-        
-        
-    # update which keyboard keys are being pressed by the user
-    # keys are keyboard keys and values are "True" or "False"
+        # update which keyboard keys are being pressed by the user
+        # keys are keyboard keys and values are "True" or "False"
     def update_key_map(self, key, value):
         self.key_map[key] = value
-        
-        
+    
+    def increase_camera_speed(self):
+        self.camera_move_speed = self.camera_move_speed * 1.5
+   
+    def decrease_camera_speed(self):
+        self.camera_move_speed = self.camera_move_speed / 1.5
         
     def capture_mouse(self):
         self.camera_swing_activated = True
@@ -465,8 +259,11 @@ class VoxelWorld(ShowBase):
    
     def update_camera(self, task):
         dt = globalClock.getDt()
-        
+       
+       
         if self.camera_swing_activated:
+            
+            ########## Camera rotation #########
 
             md = self.win.getPointer(0) #Mouse-Data object
             win_props = self.win.getProperties()
@@ -487,35 +284,44 @@ class VoxelWorld(ShowBase):
             new_P = self.camera.getP() - (mouse_change_Y * sensitivity * dt)
             
             self.camera.setHpr(new_H, min(90, max(-90, new_P)), 0)
-
-            # Using a vector-based approach for movement
-            # LVector is a normal, linear vector object in 3D space
-            move_vec = LVector3(0, 0, 0) 
-            playerMoveSpeed = 15.0
+        
 
 
-            # in Panda3D, y goes forward/backward and x goes to the side from camera perspective
-            # z goes up and down
+            ################## Camera movement ##################
+            
+            # Using Quarternions (special 3D-Vectors) to move relative to camera orientation
+            quat = self.camera.getQuat(self.render)
+            forward = quat.getForward() # local Y
+            right = quat.getRight()     # local X
+            up = LVector3(0,0,1) # up and down is always moving directly in z axis         
+            
+            # flattening horizontal vectors, so that movement doesn't occur up and down if the camera looks up or down
+            forward.setZ(0)
+            forward.normalize()
+            right.setZ(0)
+            right.normalize()
+
+            move_dir = LVector3(0, 0, 0) # In Panda3D, LVector3 is a normal, linear vector in 3 dimensions
 
             if self.key_map['forward']:  
-                move_vec.setY(1)
+                move_dir += forward
             if self.key_map['backward']: 
-                move_vec.setY(-1)
+                move_dir -= forward
             if self.key_map['left']:     
-                move_vec.setX(-1)
+                move_dir -= right
             if self.key_map['right']:    
-                move_vec.setX(1)
+                move_dir += right
             if self.key_map['up']:       
-                move_vec.setZ(1)
+                move_dir += up
             if self.key_map['down']:     
-                move_vec.setZ(-1)
+                move_dir -= up
 
-            move_vec.normalize() # Prevents moving faster diagonally
+            move_dir.normalize() # Prevents moving faster diagonally
             
             # Translate the movement relative to where the camera is looking
             # setPos(reference_node, movement_vector), performs matrix multiplication in C++ backend
             # setPos(x, y, z) would also be possible (method overloading feature from Panda3D)
-            self.camera.setPos(self.camera, move_vec * playerMoveSpeed * dt)
+            self.camera.setPos(self.camera.getPos() + move_dir * self.camera_move_speed * dt)
 
         return task.cont  
 
