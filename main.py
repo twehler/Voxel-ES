@@ -14,7 +14,7 @@ from panda3d.core import (
 )
 
 from common import *
-from geometry import *
+from world_geometry import *
 from cell import *
 
 
@@ -84,24 +84,6 @@ def hex_to_rgba(hex_str):
     return LColor(r, g, b, 1.0)
 
 
-###### Creating Voxel types #####
-
-stone_texture = (0, 4)
-grass1_texture = (1, 4)
-grass2_texture = (2, 4)
-grass3_texture = (3, 4)
-grass4_texture = (4, 4)
-
-voxel_stone = Voxel(stone_texture)
-voxel_grass1 = Voxel(grass1_texture)
-voxel_grass2 = Voxel(grass2_texture)
-voxel_grass3 = Voxel(grass3_texture)
-voxel_grass4 = Voxel(grass4_texture)
-
-#################################
-
-
-
 
 class VoxelWorld(ShowBase):
     def __init__(self):
@@ -143,6 +125,21 @@ class VoxelWorld(ShowBase):
 
         # Generating world
         logger_main.debug("------------- Beginning World Generation ----------------")
+        
+        # Generating textures based on coordinates in the texture atlas
+        stone_texture = (0, 4)
+        grass1_texture = (1, 4)
+        grass2_texture = (2, 4)
+        grass3_texture = (3, 4)
+        grass4_texture = (4, 4)
+
+        # Generating Voxel objects
+        voxel_stone = Voxel(stone_texture)
+        voxel_grass1 = Voxel(grass1_texture)
+        voxel_grass2 = Voxel(grass2_texture)
+        voxel_grass3 = Voxel(grass3_texture)
+        voxel_grass4 = Voxel(grass4_texture)
+
 
         self.generate_world(300, 300, 20, voxel_grass3)       
         
@@ -156,18 +153,12 @@ class VoxelWorld(ShowBase):
 
         print("---------------- Generating Entities -----------------")
 
-        # Create a bright red cell at (10, 0, 5) tilted 45 degrees
-        cell1 = Cell(
-            pos=LVector3(10, 0, 50),
-            hpr=LVector3(45, 0, 0),
-            hex_color="#FF0000"
-        )
+       
 
-        # You can still move it later
-        cell1.node_path.setZ(cell1.node_path.getZ() + 1)
-           
+        rhombic_dodecahedron = Cell(geometry_type="rhombic_dodecahedron", pos=(30,30,30), hpr = (0, 0, 0), hex_color="ff0000", size = 1.0)
 
-
+      
+        
 
     def generate_world(self, x, y, max_height, voxel_object):
         voxel_mesh = VoxelMesh(voxel_object)
