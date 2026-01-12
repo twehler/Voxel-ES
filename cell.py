@@ -13,8 +13,16 @@ logger_cell = logging.getLogger(__name__)
 
 # Class for creating position, geometry and color
 class Cell:
-    def __init__(self, hex_color, pos, geometry_type = "rhombic_dodecahedron", hpr=LVector3(0,0,0), width=1.0, height=1.0):
+    def __init__(self, hex_color, pos, geometry_type, hpr, width, height, gravity):
        
+        if not isinstance(gravity, bool):
+            raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+
+        if not isinstance(geometry_type, string):
+            raise TypeError(f"Argument 'geometry_type' must be 'rhombic_dodecahedron'.")
+
+
+
         self.x = pos[0]
         self.y = pos[1]
         self.z = pos[2]
@@ -114,9 +122,116 @@ class Cell:
 
 
 class BaseCell(Cell):
-    def __init__(self, hex_color, pos, geometry_type = "rhombic_dodecahedron", hpr=LVector3(0,0,0), width=1.0, height=1.0):
-        super().__init__(hex_color, pos, geometry_type = "rhombic_dodecahedron", hpr=LVector3(0,0,0), width=1.0, height=1.0)
+    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
+        super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
         
         logger_cell.info("------------- Generating Base-Cell -------------")
-        
+        if not isinstance(gravity, bool):
+            raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")    
+
+
+class BoneCell(Cell):
+    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
+    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
+    ┊
+    ┊   logger_cell.info("------------- Generating Bone-Cell -------------")
+    ┊   if not isinstance(gravity, bool):
+    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+
+
+class GliderCell(Cell):
+    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
+    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
+    ┊
+    ┊   logger_cell.info("------------- Generating Glider-Cell -------------")
+    ┊   if not isinstance(gravity, bool):
+    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+
+
+class MuscleCell(Cell):
+    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
+    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
+    ┊
+    ┊   logger_cell.info("------------- Generating Muscle-Cell -------------")
+    ┊   if not isinstance(gravity, bool):
+    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+
+
+class FinCell(Cell):
+    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
+    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
+    ┊
+    ┊   logger_cell.info("------------- Generating Fin-Cell -------------")
+    ┊   if not isinstance(gravity, bool):
+    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+
+
+class HardCell(Cell):
+    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
+    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
+    ┊
+    ┊   logger_cell.info("------------- Generating Base-Cell -------------")
+    ┊   if not isinstance(gravity, bool):
+    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+
+
+class OpticCell(Cell):
+    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
+    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
+    ┊
+    ┊   logger_cell.info("------------- Generating Optic-Cell -------------")
+    ┊   if not isinstance(gravity, bool):
+    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+
+
+class GastricCell(Cell):
+    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
+    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
+    ┊
+    ┊   logger_cell.info("------------- Generating Gastric-Cell -------------")
+    ┊   if not isinstance(gravity, bool):
+    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+
+
+class ExcretionCell(Cell):
+    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
+    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
+    ┊
+    ┊   logger_cell.info("------------- Generating Excretion-Cell -------------")
+    ┊   if not isinstance(gravity, bool):
+    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+
+
+class PhotosyntheticCell(Cell):
+    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
+    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
+    ┊
+    ┊   logger_cell.info("------------- Generating Photosynthetic-Cell -------------")
+    ┊   if not isinstance(gravity, bool):
+    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+
+
+class EnergyStorageCell(Cell):
+    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
+    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
+    ┊
+    ┊   logger_cell.info("------------- Generating Energy-Storage-Cell -------------")
+    ┊   if not isinstance(gravity, bool):
+    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+
+
+class NeuralCell(Cell):
+    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
+    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
+    ┊
+    ┊   logger_cell.info("------------- Generating Base-Cell -------------")
+    ┊   if not isinstance(gravity, bool):
+    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+
+
+
+
+
+
+
 
