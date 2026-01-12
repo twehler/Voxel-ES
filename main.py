@@ -29,10 +29,9 @@ multi-dimensional numpy array, which stores data about: cell-index, cell type, p
 implement voxel-surface-movement 
 --> all blocks should only move by "sliding" on another block
 
-expand voxel-class: 
-there is a list of "mandatory voxels", on which a voxel depends
---> for example, all voxels depend on the controller cell
-if mandatory voxels are not present, the cell dies
+for every cell there is a list of "mandatory cells", on which a cell depends
+--> for example, all cells depend on the controller cell
+if mandatory cells are not present, the cell dies
 
 implement voxel: "ControllerCell"
 implement voxel: "SliderCell"
@@ -57,17 +56,8 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir) # Change the working directory to the script's directory
 print("Working Directory:", os.getcwd())
 
-
-# Function for global root logger setup
-def logging_setup():
-    logging.basicConfig(
-        filename="main.log",
-        level = logging.DEBUG,
-        format='%(asctime)s - %(name)s - %(lineno)d - %(levelname)s - %(message)s'
-        )
     
 logging_setup()
-
 logger_main = logging.getLogger(__name__)
 
 logger_main.info("------------------------------------------------------")
@@ -141,7 +131,7 @@ class VoxelWorld(ShowBase):
         voxel_grass4 = Voxel(grass4_texture)
 
 
-        self.generate_world(300, 300, 20, voxel_grass3)       
+        self.generate_world(100, 100, 5, voxel_grass1)       
         
         logger_main.info("------------- World Generation Complete -----------------")
         
@@ -153,12 +143,53 @@ class VoxelWorld(ShowBase):
 
         print("---------------- Generating Entities -----------------")
 
-       
+        base_cell1 = BaseCell("#ffb226", pos=(5,5,11), geometry_type="rhombic_dodecahedron", hpr = (20, 9, 30), width = 1.0)   
+        cell2 = Cell("#26aaff", pos=(5,5.25,11.25), geometry_type="rhombic_dodecahedron", hpr = (0, 0, 0), width = 1.0)
+        cell3 = Cell("#26aaff", pos=(5,5.5,11.5), geometry_type="rhombic_dodecahedron", hpr = (0, 0, 0), width = 1.0)
+        cell4 = Cell("#269cff", pos=(5,5.75,11.75), geometry_type="rhombic_dodecahedron", hpr = (0, 0, 0), width = 1.0)
+        cell5 = Cell("#269cff", pos=(5,6,12), geometry_type="rhombic_dodecahedron", hpr = (0, 0, 0), width = 1.0)
 
-        rhombic_dodecahedron = Cell(geometry_type="rhombic_dodecahedron", pos=(30,30,30), hpr = (0, 0, 0), hex_color="ff0000", size = 1.0)
+        base_cell1.render_cell()
+        cell2.render_cell()
 
-      
-        
+        # generating a filament-like structure
+        base_cell2 = BaseCell("#ffb226", pos=(10,10,11), geometry_type="rhombic_dodecahedron", hpr = (0,0,0), width = 1.0)
+        x_base = 10
+        y_base = 10
+        z_base = 11
+        base_cell2.render_cell()    
+        for i in range(20):
+            x_base += 0.25
+            y_base += 0.25
+            z_base += 0.25
+            cell = Cell("#269cff", pos=(x_base,y_base,z_base), geometry_type="rhombic_dodecahedron", hpr = (0, 0, 0), width = 1.0)
+            cell.render_cell()
+
+
+        # 1. Define orientation and starting point
+        target_hpr = LVector3(20, 9, 30)
+        current_pos = LVector3(20, 20, 50)
+        step_dist = 0.5  # How far each cell is from the previous one
+
+        # 2. Calculate the direction vector using a dummy node
+        dummy = render.attachNewNode("dummy")
+        dummy.setHpr(target_hpr)
+        # In Panda3D, 'forward' is the Y-axis (0, 1, 0)
+        direction = render.getRelativeVector(dummy, LVector3(0, 1, 0))
+        dummy.removeNode() # Clean up
+
+        # 3. Generate the filament
+        base_cell3 = BaseCell("#ffb226", pos=current_pos, hpr=target_hpr, width=1.0)
+        base_cell3.render_cell()
+
+        for i in range(20):
+            # Move the current position forward by the direction vector * distance
+            current_pos += direction * step_dist
+            
+            cell = Cell("#269cff", pos=current_pos, hpr=target_hpr, width=1.0)
+            cell.render_cell()
+
+
 
     def generate_world(self, x, y, max_height, voxel_object):
         voxel_mesh = VoxelMesh(voxel_object)

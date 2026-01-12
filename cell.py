@@ -2,33 +2,40 @@ import math
 from panda3d.core import (
     GeomVertexFormat, GeomVertexData, Geom, 
     GeomVertexWriter, GeomTriangles, GeomNode, 
-    LVector3, LColor
+    LVector3, LColor, NodePath
 )
 
+from common import *
+
+logging_setup()
+logger_cell = logging.getLogger(__name__)
+
+
+# Class for creating position, geometry and color
 class Cell:
-    def __init__(self, geometry_type = "rhombic_dodecahedron", pos=LVector3(0,0,0), hpr=LVector3(0,0,0), hex_color="#FFFFFF", size=1.0):
+    def __init__(self, hex_color, pos, geometry_type = "rhombic_dodecahedron", hpr=LVector3(0,0,0), width=1.0, height=1.0):
        
         self.x = pos[0]
         self.y = pos[1]
         self.z = pos[2]
-        self.size = size
+        self.width = width
+        self.height = height
 
         if geometry_type == "rhombic_dodecahedron":
-            self.node_path = self.generate_rhombic_dodecahedron(self.x, self.y, self.z, self.size)
-        if geometry_type == "dodecahedron":
-            self.node_path = self.generate_dodecahedron(self.x, self.y, self.z, self.size)
-       
-        # attach to world
-        self.node_path.reparentTo(render)
-         
+            self.node_path = self.generate_rhombic_dodecahedron(self.x, self.y, self.z, self.width)
+        else:
+            raise ValueError(f"Unsupported geometry: {geometry_type}")
+
         # Set Position and Rotation
         self.node_path.setPos(pos)
         self.node_path.setHpr(hpr)
  
         # Apply Color
         self.set_hex_color(hex_color)
-
-      
+   
+    def render_cell(self):    
+        self.node_path.reparentTo(render)
+       
     def set_hex_color(self, hex_str):
         hex_str = hex_str.lstrip('#')
         r, g, b = tuple(int(hex_str[i:i+2], 16) for i in (0, 2, 4))
@@ -37,243 +44,79 @@ class Cell:
 
 
     def generate_rhombic_dodecahedron(self, x, y, z, total_width=1.0):
-        """
-        Generate a rhombic dodecahedron with correct topology.
-        
-        A rhombic dodecahedron has:
-        - 14 vertices (8 from cube + 6 from octahedron)
-        - 12 rhombic faces
-        - 24 edges
-        
-        Each rhombic face connects 2 cube vertices and 2 octahedron tips.
-        """
+        # s is the 'unit' size. Tips are at 2s.
         s = total_width / 4.0
-
-        # 14 vertices
-        v = [
-            # Inner cube vertices (0-7)
-            LVector3( s,  s,  s),  # 0
-            LVector3( s,  s, -s),  # 1
-            LVector3( s, -s,  s),  # 2
-            LVector3( s, -s, -s),  # 3
-            LVector3(-s,  s,  s),  # 4
-            LVector3(-s,  s, -s),  # 5
-            LVector3(-s, -s,  s),  # 6
-            LVector3(-s, -s, -s),  # 7
-            # Outer octahedron tips (8-13)
-            LVector3( 2*s,  0,   0),   # 8  (+X)
-            LVector3(-2*s,  0,   0),   # 9  (-X)
-            LVector3( 0,   2*s,  0),   # 10 (+Y)
-            LVector3( 0,  -2*s,  0),   # 11 (-Y)
-            LVector3( 0,   0,   2*s),  # 12 (+Z)
-            LVector3( 0,   0,  -2*s)   # 13 (-Z)
-        ]
-
-        # 12 rhombic faces
-        # Each face has 2 cube vertices and 2 octahedron tips
-        # Vertices ordered counter-clockwise when viewed from outside
-        face_indices = [
-            # Top faces (involving +Y tip, vertex 10)
-            (10, 0, 8, 1),   # top-right
-            (10, 1, 13, 5),  # top-back
-            (10, 5, 9, 4),   # top-left
-            (10, 4, 12, 0),  # top-front
-            
-            # Bottom faces (involving -Y tip, vertex 11)
-            (11, 2, 8, 3),   # bottom-right
-            (11, 3, 13, 7),  # bottom-back
-            (11, 7, 9, 6),   # bottom-left
-            (11, 6, 12, 2),  # bottom-front
-            
-            # Side faces (connecting +Z and -Z tips)
-            (12, 0, 10, 4),  # front-top (reordered for consistency)
-            (12, 6, 11, 2),  # front-bottom (reordered for consistency)
-            (13, 1, 10, 5),  # back-top (reordered for consistency)
-            (13, 7, 11, 3),  # back-bottom (reordered for consistency)
-        ]
-
-        gformat = GeomVertexFormat.getV3n3()
-        vdata = GeomVertexData('rhombic', gformat, Geom.UHStatic)
-        vertex_writer = GeomVertexWriter(vdata, 'vertex')
-        normal_writer = GeomVertexWriter(vdata, 'normal')
-        tris = GeomTriangles(Geom.UHStatic)
-
         world_pos = LVector3(x, y, z)
 
-        for face in face_indices:
-            start = vdata.getNumRows()
-            
-            # Get the 4 corner points of this rhombus
-            points = [v[face[0]], v[face[1]], v[face[2]], v[face[3]]]
-
-            # Calculate face normal (right-hand rule)
-            edge1 = points[1] - points[0]
-            edge2 = points[2] - points[0]
-            face_normal = edge1.cross(edge2)
-            face_normal.normalize()
-
-            # Write vertices and normals
-            for point in points:
-                vertex_writer.addData3(point + world_pos)
-                normal_writer.addData3(face_normal)
-
-            # Create 2 triangles from the 4-vertex rhombus
-            tris.addVertices(start, start + 1, start + 2)
-            tris.addVertices(start, start + 2, start + 3)
-       
-        geom = Geom(vdata)
-        geom.addPrimitive(tris)
-        node = GeomNode('rhombic_cell_node')
-        node.addGeom(geom)
-        return render.attachNewNode(node)
-
-
-    def generate_rhombic_dodecahedron_old(self, x, y, z, total_width=1.0):
-        """
-        Generate a rhombic dodecahedron with correct topology.
-        
-        A rhombic dodecahedron has:
-        - 14 vertices (8 from cube + 6 from octahedron)
-        - 12 rhombic faces
-        - 24 edges
-        
-        Each rhombic face connects 2 cube vertices and 2 octahedron tips.
-        """
-        s = total_width / 4.0
-
-        # 14 vertices
-        v = [
-            # Inner cube vertices (0-7)
-            LVector3( s,  s,  s),  # 0
-            LVector3( s,  s, -s),  # 1
-            LVector3( s, -s,  s),  # 2
-            LVector3( s, -s, -s),  # 3
-            LVector3(-s,  s,  s),  # 4
-            LVector3(-s,  s, -s),  # 5
-            LVector3(-s, -s,  s),  # 6
-            LVector3(-s, -s, -s),  # 7
-            # Outer octahedron tips (8-13)
-            LVector3( 2*s,  0,   0),   # 8  (+X)
-            LVector3(-2*s,  0,   0),   # 9  (-X)
-            LVector3( 0,   2*s,  0),   # 10 (+Y)
-            LVector3( 0,  -2*s,  0),   # 11 (-Y)
-            LVector3( 0,   0,   2*s),  # 12 (+Z)
-            LVector3( 0,   0,  -2*s)   # 13 (-Z)
-        ]
-
-        # 12 rhombic faces
-        # Each face has 2 cube vertices and 2 octahedron tips
-        # Format: (tip1, cube_v1, tip2, cube_v2) going counter-clockwise from outside
-        face_indices = [
-            # Faces connecting +X and +Y tips
-            (10, 0, 8, 1),   # top-right-front
-            (10, 4, 9, 5),   # top-left-back
-            
-            # Faces connecting +X and -Y tips  
-            (8, 2, 11, 3),   # right-bottom-front
-            (9, 6, 11, 7),   # left-bottom-back
-            
-            # Faces connecting +X and +Z tips
-            (12, 0, 8, 2),   # front-right-top
-            (12, 4, 9, 6),   # front-left-bottom
-            
-            # Faces connecting +X and -Z tips
-            (8, 1, 13, 3),   # back-right-top
-            (9, 5, 13, 7),   # back-left-bottom
-            
-            # Faces connecting +Y and +Z tips
-            (10, 0, 12, 4),  # top-front
-            
-            # Faces connecting +Y and -Z tips
-            (10, 1, 13, 5),  # top-back
-            
-            # Faces connecting -Y and +Z tips
-            (11, 2, 12, 6),  # bottom-front
-            
-            # Faces connecting -Y and -Z tips
-            (11, 3, 13, 7),  # bottom-back
-        ]
-
-        gformat = GeomVertexFormat.getV3n3()
-        vdata = GeomVertexData('rhombic', gformat, Geom.UHStatic)
-        vertex_writer = GeomVertexWriter(vdata, 'vertex')
-        normal_writer = GeomVertexWriter(vdata, 'normal')
-        tris = GeomTriangles(Geom.UHStatic)
-
-        world_pos = LVector3(x, y, z)
-
-        for face in face_indices:
-            start = vdata.getNumRows()
-            
-            # Get the 4 corner points of this rhombus
-            points = [v[face[0]], v[face[1]], v[face[2]], v[face[3]]]
-
-            # Calculate face normal (right-hand rule)
-            edge1 = points[1] - points[0]
-            edge2 = points[2] - points[0]
-            face_normal = edge1.cross(edge2)
-            face_normal.normalize()
-
-            # Write vertices and normals
-            for point in points:
-                vertex_writer.addData3(point + world_pos)
-                normal_writer.addData3(face_normal)
-
-            # Create 2 triangles from the 4-vertex rhombus
-            tris.addVertices(start, start + 1, start + 2)
-            tris.addVertices(start, start + 2, start + 3)
-       
-        geom = Geom(vdata)
-        geom.addPrimitive(tris)
-        node = GeomNode('rhombic_cell_node')
-        node.addGeom(geom)
-        return render.attachNewNode(node)
-
-    def generate_dodecahedron(self, size):
-        phi = (1 + math.sqrt(5)) / 2
-        a, b = size, size / phi
-
-        vertices = [
-            LVector3( a,  a,  a), LVector3( a,  a, -a), LVector3( a, -a,  a), LVector3( a, -a, -a),
-            LVector3(-a,  a,  a), LVector3(-a,  a, -a), LVector3(-a, -a,  a), LVector3(-a, -a, -a),
-            LVector3( 0,  b,  phi*a), LVector3( 0,  b, -phi*a), LVector3( 0, -b,  phi*a), LVector3( 0, -b, -phi*a),
-            LVector3( b,  phi*a,  0), LVector3( b, -phi*a,  0), LVector3(-b,  phi*a,  0), LVector3(-b, -phi*a,  0),
-            LVector3( phi*a,  0,  b), LVector3( phi*a,  0, -b), LVector3(-phi*a,  0,  b), LVector3(-phi*a,  0, -b)
-        ]
-
-        # 12 Pentagonal faces defined by vertex indices
-        faces = [
-            [0, 12, 14, 4, 8], [0, 8, 10, 2, 16], [0, 16, 17, 1, 12],
-            [4, 14, 15, 6, 18], [4, 18, 10, 8, 0], [1, 9, 11, 3, 17],
-            [2, 13, 15, 6, 10], [2, 10, 18, 6, 13], [3, 11, 7, 15, 13],
-            [3, 13, 2, 16, 17], [3, 17, 1, 9, 11], [19, 5, 14, 12, 1] # indices vary by orientation
-        ]
-
-        format = GeomVertexFormat.getV3n3() # Position and Normal
-        vdata = GeomVertexData('dodeca', format, Geom.UHStatic)
-        
+        # 1. Setup Data - using V3N3 (no textures) for simplicity
+        geom_format = GeomVertexFormat.getV3n3()
+        vdata = GeomVertexData('rhombic', geom_format, Geom.UHStatic)
         vertex = GeomVertexWriter(vdata, 'vertex')
         normal = GeomVertexWriter(vdata, 'normal')
         tris = GeomTriangles(Geom.UHStatic)
 
-        for indices in faces:
-            start_idx = vdata.getNumRows()
-            # Normal calculation for lighting
-            v0, v1, v2 = vertices[indices[0]], vertices[indices[1]], vertices[indices[2]]
-            face_normal = (v1 - v0).cross(v2 - v0)
-            face_normal.normalize()
+        # 2. Define the 14 Vertices
+        v = [
+            # Cube (0-7)
+            LVector3( s, s, s), LVector3( s, s,-s), LVector3( s,-s, s), LVector3( s,-s,-s),
+            LVector3(-s, s, s), LVector3(-s, s,-s), LVector3(-s,-s, s), LVector3(-s,-s,-s),
+            # Octahedron / Tips (8-13)
+            LVector3( 2*s, 0, 0), LVector3(-2*s, 0, 0), # +X (8), -X (9)
+            LVector3(0,  2*s, 0), LVector3(0, -2*s, 0), # +Y (10), -Y (11)
+            LVector3(0, 0,  2*s), LVector3(0, 0, -2*s)  # +Z (12), -Z (13)
+        ]
 
-            for idx in indices:
-                vertex.addData3(vertices[idx])
-                normal.addData3(face_normal)
+        def add_face(p1, p2, p3, p4):
+            """p1: center tip, p2/p4: side cube corners, p3: opposite tip"""
+            start = vdata.getNumRows()
+            pts = [v[p1], v[p2], v[p3], v[p4]]
             
-            # Triangulate pentagon (fan method)
-            tris.addVertices(start_idx, start_idx + 1, start_idx + 2)
-            tris.addVertices(start_idx, start_idx + 2, start_idx + 3)
-            tris.addVertices(start_idx, start_idx + 3, start_idx + 4)
+            # Calculate outward normal
+            edge1 = pts[1] - pts[0]
+            edge2 = pts[2] - pts[0]
+            norm = edge1.cross(edge2)
+            norm.normalize()
 
+            for p in pts:
+                vertex.addData3(p + world_pos)
+                normal.addData3(norm)
+            
+            # Two triangles for the diamond
+            tris.addVertices(start, start + 1, start + 2)
+            tris.addVertices(start, start + 2, start + 3)
+
+        # 3. Define the 12 Diamond Faces
+        # Top Cap (Connected to +Z tip: index 12)
+        add_face(12, 0, 10, 4) # Top-Front (+Y)
+        add_face(12, 4,  9, 6) # Top-Left (-X)
+        add_face(12, 6, 11, 2) # Top-Back (-Y)
+        add_face(12, 2,  8, 0) # Top-Right (+X)
+
+        # Bottom Cap (Connected to -Z tip: index 13)
+        add_face(5, 10, 1, 13) # Bottom-Front (+Y)
+        add_face(7, 9, 5, 13) # Bottom-Left (-X)
+        add_face(3, 11, 7, 13) # Bottom-Back (-Y)
+        add_face(1, 8, 3, 13) # Bottom-Right (+X)
+
+        # Middle Ring (Side connectors)
+        add_face(1, 10, 0, 8)  # Side +X/+Y
+        add_face(5, 9, 4, 10)  # Side +Y/-X
+        add_face(7, 11, 6, 9) # Side -X/-Y
+        add_face(3, 8, 2, 11)  # Side -Y/+X
+
+        # 4. Finalize
         geom = Geom(vdata)
         geom.addPrimitive(tris)
-        node = GeomNode('cell_node')
+        node = GeomNode('rhombic_cell')
         node.addGeom(geom)
-        return render.attachNewNode(node)
+        return NodePath(node)
+
+
+
+class BaseCell(Cell):
+    def __init__(self, hex_color, pos, geometry_type = "rhombic_dodecahedron", hpr=LVector3(0,0,0), width=1.0, height=1.0):
+        super().__init__(hex_color, pos, geometry_type = "rhombic_dodecahedron", hpr=LVector3(0,0,0), width=1.0, height=1.0)
+        
+        logger_cell.info("------------- Generating Base-Cell -------------")
+        
+
