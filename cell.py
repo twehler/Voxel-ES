@@ -10,27 +10,69 @@ from common import *
 logging_setup()
 logger_cell = logging.getLogger(__name__)
 
+step = 0.5
+small_step = 0.25
+possible_neighbor_positions = {
+        LVector3(0, step, 0),                        
+        LVector3(0, 0, step),                        
+        LVector3(step, 0, 0),                        
+        LVector3(0, -step, 0),                       
+        LVector3(0, 0, -step),                       
+        LVector3(-step, 0, 0),                       
+        LVector3(0, small_step, small_step),
+        LVector3(small_step, small_step, 0),
+        LVector3(small_step, 0, small_step),
+        LVector3(0, -small_step, -small_step),
+        LVector3(-small_step, -small_step, 0),
+        LVector3(-small_step, 0, -small_step),
+        LVector3(small_step, -small_step, 0),
+        LVector3(-small_step, small_step, 0),
+        LVector3(small_step, 0, -small_step),
+        LVector3(-small_step, 0, small_step),
+        LVector3(0, small_step, -small_step),
+        LVector3(0, -small_step, small_step)}
+
 
 # Class for creating position, geometry and color
 class Cell:
-    def __init__(self, hex_color, pos, geometry_type, hpr, width, height, gravity):
+    def __init__(self, pos, hpr, hex_color="#ffb226", geometry_type="rhombic_dodecahedron", width=0.5):
        
-        if not isinstance(gravity, bool):
-            raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
-
-        if not isinstance(geometry_type, string):
+        if geometry_type != 'rhombic_dodecahedron':
             raise TypeError(f"Argument 'geometry_type' must be 'rhombic_dodecahedron'.")
-
-
-
-        self.x = pos[0]
-        self.y = pos[1]
-        self.z = pos[2]
+        
+        self.pos = LVector3(pos)
         self.width = width
-        self.height = height
+
+        step = width/2                                                      
+        small_step = step/2
+
+        # A dictionary of positions around the cell
+        # "True" means that the position is currently free for another cell
+        
+        self.free_neighbor_positions = {LVector3(0, step, 0),                        
+                                    LVector3(0, 0, step),                        
+                                    LVector3(step, 0, 0),                        
+                                    LVector3(0, -step, 0),                       
+                                    LVector3(0, 0, -step),                       
+                                    LVector3(-step, 0, 0),                       
+                                    LVector3(0, small_step, small_step),
+                                    LVector3(small_step, small_step, 0),
+                                    LVector3(small_step, 0, small_step),
+                                    LVector3(0, -small_step, -small_step),
+                                    LVector3(-small_step, -small_step, 0),
+                                    LVector3(-small_step, 0, -small_step),
+                                    LVector3(small_step, -small_step, 0),
+                                    LVector3(-small_step, small_step, 0),
+                                    LVector3(small_step, 0, -small_step),
+                                    LVector3(-small_step, 0, small_step),
+                                    LVector3(0, small_step, -small_step),
+                                    LVector3(0, -small_step, small_step)}
+              
+        
+        self.width = width       
 
         if geometry_type == "rhombic_dodecahedron":
-            self.node_path = self.generate_rhombic_dodecahedron(self.x, self.y, self.z, self.width)
+            self.node_path = self.generate_rhombic_dodecahedron(self.pos, self.width)
         else:
             raise ValueError(f"Unsupported geometry: {geometry_type}")
 
@@ -40,7 +82,10 @@ class Cell:
  
         # Apply Color
         self.set_hex_color(hex_color)
-   
+        
+        # Apply gravity
+        self.gravity = False
+
     def render_cell(self):    
         self.node_path.reparentTo(render)
        
@@ -51,11 +96,10 @@ class Cell:
         self.node_path.setColor(r/255, g/255, b/255, 1.0)
 
 
-    def generate_rhombic_dodecahedron(self, x, y, z, total_width=1.0):
+    def generate_rhombic_dodecahedron(self, pos, total_width=1.0):
         # s is the 'unit' size. Tips are at 2s.
         s = total_width / 4.0
-        world_pos = LVector3(x, y, z)
-
+        
         # 1. Setup Data - using V3N3 (no textures) for simplicity
         geom_format = GeomVertexFormat.getV3n3()
         vdata = GeomVertexData('rhombic', geom_format, Geom.UHStatic)
@@ -86,7 +130,7 @@ class Cell:
             norm.normalize()
 
             for p in pts:
-                vertex.addData3(p + world_pos)
+                vertex.addData3(p + pos)
                 normal.addData3(norm)
             
             # Two triangles for the diamond
@@ -122,114 +166,144 @@ class Cell:
 
 
 class BaseCell(Cell):
-    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
-        super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
+    def __init__(self, pos, hpr, hex_color="#ffb226", geometry_type="rhombic_dodecahedron", width=0.5):
+        super().__init__(pos, hpr, hex_color="#ffb226", geometry_type="rhombic_dodecahedron", width=0.5)
         
         logger_cell.info("------------- Generating Base-Cell -------------")
-        if not isinstance(gravity, bool):
-            raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")    
+        
+                
 
 
 class BoneCell(Cell):
-    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
-    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
-    ┊
-    ┊   logger_cell.info("------------- Generating Bone-Cell -------------")
-    ┊   if not isinstance(gravity, bool):
-    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+    def __init__(self, pos, hpr, hex_color="#bebebe", geometry_type="rhombic_dodecahedron", width=0.5):
+        super().__init__(pos, hpr, hex_color, geometry_type)
+     
+        logger_cell.info("------------- Generating Bone-Cell -------------")
+        
+            
 
 
 class GliderCell(Cell):
-    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
-    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
-    ┊
-    ┊   logger_cell.info("------------- Generating Glider-Cell -------------")
-    ┊   if not isinstance(gravity, bool):
-    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+    def __init__(self, pos, hpr, hex_color="#c84708", geometry_type="rhombic_dodecahedron", width=0.5):
+        super().__init__(pos, hpr, hex_color, geometry_type, width)
+     
+        logger_cell.info("------------- Generating Glider-Cell -------------")
+        
+            
 
 
 class MuscleCell(Cell):
-    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
-    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
-    ┊
-    ┊   logger_cell.info("------------- Generating Muscle-Cell -------------")
-    ┊   if not isinstance(gravity, bool):
-    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+    def __init__(self, pos, hpr, hex_color="#c80808", geometry_type="rhombic_dodecahedron", width=0.5):
+        super().__init__(pos, hpr, hex_color, geometry_type, width)
+     
+        logger_cell.info("------------- Generating Muscle-Cell -------------")
+        
+            
 
 
 class FinCell(Cell):
-    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
-    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
-    ┊
-    ┊   logger_cell.info("------------- Generating Fin-Cell -------------")
-    ┊   if not isinstance(gravity, bool):
-    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+    def __init__(self, pos, hpr, hex_color="#af7202", geometry_type="rhombic_dodecahedron", width=0.5):
+        super().__init__(pos, hpr, hex_color, geometry_type, width)
+     
+        logger_cell.info("------------- Generating Fin-Cell -------------")
+        
+            
 
 
 class HardCell(Cell):
-    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
-    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
-    ┊
-    ┊   logger_cell.info("------------- Generating Base-Cell -------------")
-    ┊   if not isinstance(gravity, bool):
-    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+    def __init__(self, pos, hpr, hex_color="#1f1f1f", geometry_type="rhombic_dodecahedron", width=0.5):
+        super().__init__(pos, hpr, hex_color, geometry_type, width)
+     
+        logger_cell.info("------------- Generating Base-Cell -------------")
+        
+            
 
 
 class OpticCell(Cell):
-    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
-    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
-    ┊
-    ┊   logger_cell.info("------------- Generating Optic-Cell -------------")
-    ┊   if not isinstance(gravity, bool):
-    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+    def __init__(self, pos, hpr, hex_color="#486bff", geometry_type="rhombic_dodecahedron", width=0.5):
+        super().__init__(pos, hpr, hex_color, geometry_type, width)
+     
+        logger_cell.info("------------- Generating Optic-Cell -------------")
+        
+            
+
+class FoodIngestionCell(Cell):
+    def __init__(self, pos, hpr, hex_color="#d94c4c", geometry_type="rhombic_dodecahedron", width=0.5):
+        super().__init__(pos, hpr, hex_color="#ffb226", geometry_type="rhombic_dodecahedron", width=0.5)
+     
+        logger_cell.info("------------- Generating Food-Ingestion-Cell -------------")
+        
+            
 
 
 class GastricCell(Cell):
-    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
-    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
-    ┊
-    ┊   logger_cell.info("------------- Generating Gastric-Cell -------------")
-    ┊   if not isinstance(gravity, bool):
-    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+    def __init__(self, pos, hpr, hex_color="#d95730", geometry_type="rhombic_dodecahedron", width=0.5):
+        super().__init__(pos, hpr, hex_color="#ffb226", geometry_type="rhombic_dodecahedron", width=0.5)
+     
+        logger_cell.info("------------- Generating Gastric-Cell -------------")
+        
+            
 
 
 class ExcretionCell(Cell):
-    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
-    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
-    ┊
-    ┊   logger_cell.info("------------- Generating Excretion-Cell -------------")
-    ┊   if not isinstance(gravity, bool):
-    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
-
-
-class PhotosyntheticCell(Cell):
-    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
-    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
-    ┊
-    ┊   logger_cell.info("------------- Generating Photosynthetic-Cell -------------")
-    ┊   if not isinstance(gravity, bool):
-    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+    def __init__(self, pos, hpr, hex_color="#d95730", geometry_type="rhombic_dodecahedron", width=0.5):
+        super().__init__(pos, hpr, hex_color, geometry_type, width)
+     
+        logger_cell.info("------------- Generating Excretion-Cell -------------")
+        
+            
 
 
 class EnergyStorageCell(Cell):
-    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
-    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
-    ┊
-    ┊   logger_cell.info("------------- Generating Energy-Storage-Cell -------------")
-    ┊   if not isinstance(gravity, bool):
-    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+    def __init__(self, pos, hpr, hex_color="#cea476", geometry_type="rhombic_dodecahedron", width=0.5):
+        super().__init__(pos, hpr, hex_color, geometry_type, width)
+     
+        logger_cell.info("------------- Generating Energy-Storage-Cell -------------")
+        
+            
 
 
 class NeuralCell(Cell):
-    def __init__(self, hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity):
-    ┊   super().__init__(hex_color, pos, geometry_type, hpr=LVector3, width, height, gravity)
-    ┊
-    ┊   logger_cell.info("------------- Generating Base-Cell -------------")
-    ┊   if not isinstance(gravity, bool):
-    ┊   ┊   raise TypeError(f"Argument 'gravity' must be boolean, not {type(gravity).__name__}")
+    def __init__(self, pos, hpr, hex_color="#1ad4e3", geometry_type="rhombic_dodecahedron", width=0.5):
+        super().__init__(pos, hpr, hex_color, geometry_type, width)
+     
+        logger_cell.info("------------- Generating Base-Cell -------------")
+        
+            
+
+class PhotosyntheticCell(Cell):
+    def __init__(self, pos, hpr, hex_color="#168e20", geometry_type="rhombic_dodecahedron", width=0.5):
+        super().__init__(pos, hpr, hex_color, geometry_type, width)
+     
+        logger_cell.info("------------- Generating Photosynthetic-Cell -------------")
+        
+            
+
+class PlantNodeCell(PhotosyntheticCell):
+    def __init__(self, pos, hpr, hex_color="#115a17", geometry_type="rhombic_dodecahedron", width=0.5):
+        super().__init__(pos, hpr, hex_color, geometry_type, width)
+                  
+        logger_cell.info("------------- Generating Plant-Node-Cell -------------")
+        
+           
 
 
+class PlantLeafCell(PhotosyntheticCell):
+    def __init__(self, pos, hpr, hex_color="#17af24", geometry_type="rhombic_dodecahedron", width=0.5):
+        super().__init__(pos, hpr, hex_color, geometry_type, width)
+             
+        logger_cell.info("------------- Generating Plant-Node-Cell -------------")
+        
+          
 
+
+class PlantRootCell(PhotosyntheticCell):
+    def __init__(self, pos, hpr, hex_color="#593912", geometry_type="rhombic_dodecahedron", width=0.5):
+        super().__init__(pos, hpr, hex_color, geometry_type, width)
+             
+        logger_cell.info("------------- Generating Plant-Node-Cell -------------")
+               
+        self.gravity = False
 
 
 

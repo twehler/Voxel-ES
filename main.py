@@ -1,7 +1,7 @@
 import logging
 import os
 from math import cos, sin, pi
-
+from random import choice
 import numpy as np
 import panda3d
 from direct.showbase.ShowBase import ShowBase
@@ -16,7 +16,7 @@ from panda3d.core import (
 from common import *
 from world_geometry import *
 from cell import *
-
+from entity import *
 
 
 """ To Do:
@@ -26,8 +26,8 @@ implement textures
 implement basic entity class: 
 multi-dimensional numpy array, which stores data about: cell-index, cell type, position, rotation, linkage
 
-implement voxel-surface-movement 
---> all blocks should only move by "sliding" on another block
+
+
 
 for every cell there is a list of "mandatory cells", on which a cell depends
 --> for example, all cells depend on the controller cell
@@ -131,7 +131,7 @@ class VoxelWorld(ShowBase):
         voxel_grass4 = Voxel(grass4_texture)
 
 
-        self.generate_world(100, 100, 5, voxel_grass1)       
+        self.generate_world(1000, 1000, 20, voxel_grass1)       
         
         logger_main.info("------------- World Generation Complete -----------------")
         
@@ -141,19 +141,11 @@ class VoxelWorld(ShowBase):
         logger_main.info("Done.")
 
 
-        print("---------------- Generating Entities -----------------")
-
-        base_cell1 = BaseCell("#ffb226", pos=(5,5,11), geometry_type="rhombic_dodecahedron", hpr = (20, 9, 30), width = 1.0)   
-        cell2 = Cell("#26aaff", pos=(5,5.25,11.25), geometry_type="rhombic_dodecahedron", hpr = (0, 0, 0), width = 1.0)
-        cell3 = Cell("#26aaff", pos=(5,5.5,11.5), geometry_type="rhombic_dodecahedron", hpr = (0, 0, 0), width = 1.0)
-        cell4 = Cell("#269cff", pos=(5,5.75,11.75), geometry_type="rhombic_dodecahedron", hpr = (0, 0, 0), width = 1.0)
-        cell5 = Cell("#269cff", pos=(5,6,12), geometry_type="rhombic_dodecahedron", hpr = (0, 0, 0), width = 1.0)
-
-        base_cell1.render_cell()
-        cell2.render_cell()
+        print("---------------- Generating Objects -----------------")
+        
 
         # generating a filament-like structure
-        base_cell2 = BaseCell("#ffb226", pos=(10,10,11), geometry_type="rhombic_dodecahedron", hpr = (0,0,0), width = 1.0)
+        base_cell2 = BaseCell(pos=(10,10,11), hpr = (0,0,0))
         x_base = 10
         y_base = 10
         z_base = 11
@@ -162,16 +154,16 @@ class VoxelWorld(ShowBase):
             x_base += 0.25
             y_base += 0.25
             z_base += 0.25
-            cell = Cell("#269cff", pos=(x_base,y_base,z_base), geometry_type="rhombic_dodecahedron", hpr = (0, 0, 0), width = 1.0)
+            cell = Cell(pos=(x_base,y_base,z_base), hpr = (0, 0, 0))
             cell.render_cell()
 
 
-        # 1. Define orientation and starting point
+        # Generating filament in specific heading, pitch and roll
         target_hpr = LVector3(20, 9, 30)
         current_pos = LVector3(20, 20, 50)
-        step_dist = 0.5  # How far each cell is from the previous one
+        step_dist = 0.5 
 
-        # 2. Calculate the direction vector using a dummy node
+        # Calculating the direction vector using a dummy node as mathematical tool
         dummy = render.attachNewNode("dummy")
         dummy.setHpr(target_hpr)
         # In Panda3D, 'forward' is the Y-axis (0, 1, 0)
@@ -179,17 +171,52 @@ class VoxelWorld(ShowBase):
         dummy.removeNode() # Clean up
 
         # 3. Generate the filament
-        base_cell3 = BaseCell("#ffb226", pos=current_pos, hpr=target_hpr, width=1.0)
+        base_cell3 = BaseCell(pos=current_pos, hpr=target_hpr)
         base_cell3.render_cell()
 
         for i in range(20):
             # Move the current position forward by the direction vector * distance
             current_pos += direction * step_dist
             
-            cell = Cell("#269cff", pos=current_pos, hpr=target_hpr, width=1.0)
+            cell = Cell(pos=current_pos, hpr=target_hpr)
             cell.render_cell()
 
 
+        # Generating spherical form, entirely depending on the base cell's location
+         
+        base_cell4 = BaseCell(pos=LVector3(20, 10, 10), hpr=(0,0,0))
+        base_cell4.render_cell()
+        cell_width = 0.5
+        step = cell_width/2 
+        small_step = step/2
+
+        cell_neighbor_positions = [LVector3(0, step, 0), 
+                                LVector3(0, 0, step),
+                                LVector3(step, 0, 0),
+                                LVector3(0, -step, 0),
+                                LVector3(0, 0, -step),
+                                LVector3(-step, 0, 0),
+                                LVector3(0, small_step, small_step),
+                                LVector3(small_step, small_step, 0),
+                                LVector3(small_step, 0, small_step),
+                                LVector3(0, -small_step, -small_step),
+                                LVector3(-small_step, -small_step, 0),
+                                LVector3(-small_step, 0, -small_step),
+                                LVector3(small_step, -small_step, 0),
+                                LVector3(-small_step, small_step, 0),
+                                LVector3(small_step, 0, -small_step),
+                                LVector3(-small_step, 0, small_step),
+                                LVector3(0, small_step, -small_step),
+                                LVector3(0, -small_step, small_step)]
+
+        for position in cell_neighbor_positions:
+            cell = PhotosyntheticCell(pos=(base_cell4.pos + position), hpr=(0,0,0)) 
+            cell.render_cell()
+
+        print("--------------- Generating Entities ----------------")
+
+        entity1 = Entity(entity_pos = LVector3(-5, -5, 10), entity_hpr = (0,0,0))
+                
 
     def generate_world(self, x, y, max_height, voxel_object):
         voxel_mesh = VoxelMesh(voxel_object)
