@@ -131,7 +131,7 @@ class VoxelWorld(ShowBase):
         voxel_grass4 = Voxel(grass4_texture)
 
 
-        self.generate_world(1000, 1000, 20, voxel_grass1)       
+        self.generate_world(100, 100, 10, voxel_grass1)       
         
         logger_main.info("------------- World Generation Complete -----------------")
         
@@ -215,7 +215,7 @@ class VoxelWorld(ShowBase):
 
         print("--------------- Generating Entities ----------------")
 
-        entity1 = Entity(entity_pos = LVector3(-5, -5, 10), entity_hpr = (0,0,0))
+        entity1 = Entity(entity_pos = LVector3(5, 3, 10), entity_hpr = (0,0,0))
                 
 
     def generate_world(self, x, y, max_height, voxel_object):

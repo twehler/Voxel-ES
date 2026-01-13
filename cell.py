@@ -49,7 +49,7 @@ class Cell:
         # A dictionary of positions around the cell
         # "True" means that the position is currently free for another cell
         
-        self.free_neighbor_positions = {LVector3(0, step, 0),                        
+        self.free_neighbor_positions = [LVector3(0, step, 0),                        
                                     LVector3(0, 0, step),                        
                                     LVector3(step, 0, 0),                        
                                     LVector3(0, -step, 0),                       
@@ -66,7 +66,7 @@ class Cell:
                                     LVector3(small_step, 0, -small_step),
                                     LVector3(-small_step, 0, small_step),
                                     LVector3(0, small_step, -small_step),
-                                    LVector3(0, -small_step, small_step)}
+                                    LVector3(0, -small_step, small_step)]
               
         
         self.width = width       

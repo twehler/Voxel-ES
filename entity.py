@@ -29,7 +29,7 @@ class Entity:
         self.cells = [self.base_cell]
 
         # execute a function every second
-        base.taskMgr.doMethodLater(1.0, self.update_entity, "add_cell")
+        base.taskMgr.doMethodLater(10.0, self.update_entity, "add_cell")
             
         for obj in self.cells:
             obj.render_cell()
@@ -43,7 +43,7 @@ class Entity:
         # if no specific position is designated, the function will take free neighbor location randomly
        
         # check if free_neighbor_positions is empty
-        if contact_cell.free_neighbor_positions == True:
+        if contact_cell.free_neighbor_positions:
    
 
             if specific_location != None:
@@ -52,8 +52,8 @@ class Entity:
             # if no specific location is given, choose a random position around the cell
             # remove that position from free_neighbor_positions
             else:
-                current_pos = random.choice(contact_cell.free_neighbor_positions)
-                del free_neighbor_positions[current_pos]
+                current_pos = choice(contact_cell.free_neighbor_positions)
+                contact_cell.free_neighbor_positions.remove(current_pos)
 
             match new_cell_type:
                 case "Bone":
@@ -86,9 +86,12 @@ class Entity:
                     new_cell = PlantRootCell(pos = (contact_cell.pos + current_pos), hpr = (0,0,0))
                 case "PlantNode":
                     new_cell = PlantNodeCell(pos = (contact_cell.pos + current_pos), hpr = (0,0,0))
-
+                
+            self.cells.append(new_cell)
+            new_cell.render_cell()
         else:
             pass
+            
 
     def remove_cell(self, cell_index):
         pass
